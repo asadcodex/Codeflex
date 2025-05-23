@@ -275,7 +275,6 @@ http.route({
         }),
         {
           status: 500,
-          headers: { "Content-Type": "application/json" },
         }
       );
     }
