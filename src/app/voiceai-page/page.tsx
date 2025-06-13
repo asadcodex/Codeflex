@@ -7,7 +7,7 @@ interface CardData {
   id: string;
   eyeType: 'default' | 'xx';
   poweredBy: string;
-  activeIconSrc: string; // New: path to the icon shown on click
+  activeIconSrc: string;
 }
 
 interface CardProps extends CardData {
@@ -28,12 +28,10 @@ interface IconContainerProps {
 }
 
 interface EyeProps extends SVGProps<SVGSVGElement> {
-    containerRef: React.RefObject<HTMLDivElement>;
+    containerRef: React.RefObject<HTMLDivElement | null>;
     mousePosition: { x: number; y: number };
 }
 
-// --- SVG Eye Components ---
-// Updated DefaultEyes component with more space between the eyes.
 const DefaultEyes = ({ containerRef, mousePosition, ...props }: EyeProps) => {
   const pupil1Ref = useRef<SVGCircleElement>(null);
   const pupil2Ref = useRef<SVGCircleElement>(null);
@@ -43,7 +41,6 @@ const DefaultEyes = ({ containerRef, mousePosition, ...props }: EyeProps) => {
     const { x: mouseX, y: mouseY } = mousePosition;
     
     const blackCircleRadius = 6;
-    const whitePupilRadius = 3; 
     const maxPupilOffset = blackCircleRadius;
 
     [pupil1Ref, pupil2Ref].forEach(ref => {
@@ -64,12 +61,10 @@ const DefaultEyes = ({ containerRef, mousePosition, ...props }: EyeProps) => {
 
   return (
     <svg width="100" height="100" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
-        {/* Eye 1 - Shifted left */}
         <circle cx="22" cy="32" r="8" stroke="white" strokeWidth="2" fill="none" />
         <circle cx="22" cy="32" r="6" fill="black" />
         <circle ref={pupil1Ref} cx="22" cy="32" r="3" fill="white" />
 
-        {/* Eye 2 - Shifted right */}
         <circle cx="42" cy="32" r="8" stroke="white" strokeWidth="2" fill="none" />
         <circle cx="42" cy="32" r="6" fill="black" />
         <circle ref={pupil2Ref} cx="42" cy="32" r="3" fill="white" />
@@ -77,12 +72,9 @@ const DefaultEyes = ({ containerRef, mousePosition, ...props }: EyeProps) => {
   );
 };
 
-// Updated XEyes component with more space between the X's.
 const XEyes = (props: SVGProps<SVGSVGElement>) => (
   <svg width="100" height="100" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
-    {/* X 1 - Shifted left */}
     <path d="M16 20 L28 32 M28 20 L16 32" stroke="white" strokeWidth="4" strokeLinecap="round"/>
-    {/* X 2 - Shifted right */}
     <path d="M36 20 L48 32 M48 20 L36 32" stroke="white" strokeWidth="4" strokeLinecap="round"/>
   </svg>
 );
@@ -135,7 +127,6 @@ const IconContainer = ({ eyeType, mousePosition, isHovered, isAnotherCardHovered
         >
             <div style={iconTransform}>
                 {isClicked ? (
-                    // Active icon is now smaller
                     <img src={activeIconSrc} alt="Active agent icon" className="w-28 h-28" />
                 ) : eyeType === 'xx' ? (
                     <XEyes className="w-32 h-32" /> 
@@ -169,7 +160,6 @@ const AICard = ({ id, eyeType, poweredBy, activeIconSrc, mousePosition, activeCa
   }, [isClicked]);
 
   const handleButtonClick = () => {
-      // Toggle active state
       onActivate(isClicked ? null : id);
   }
 
