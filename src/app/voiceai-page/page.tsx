@@ -33,20 +33,23 @@ interface EyeProps extends SVGProps<SVGSVGElement> {
 }
 
 // --- SVG Eye Components ---
+// Updated DefaultEyes component with more space between the eyes.
 const DefaultEyes = ({ containerRef, mousePosition, ...props }: EyeProps) => {
-  const eye1Ref = useRef<SVGCircleElement>(null);
-  const eye2Ref = useRef<SVGCircleElement>(null);
+  const pupil1Ref = useRef<SVGCircleElement>(null);
+  const pupil2Ref = useRef<SVGCircleElement>(null);
 
   useEffect(() => {
-    if (!containerRef.current || !eye1Ref.current || !eye2Ref.current) return;
+    if (!containerRef.current || !pupil1Ref.current || !pupil2Ref.current) return;
     const { x: mouseX, y: mouseY } = mousePosition;
-    const eyeRadius = 8;
-    const pupilRadius = 3;
-    const maxPupilOffset = eyeRadius - pupilRadius;
-    [eye1Ref, eye2Ref].forEach(ref => {
-        const eye = ref.current;
-        if (!eye) return;
-        const { left, top, width, height } = eye.getBoundingClientRect();
+    
+    const blackCircleRadius = 6;
+    const whitePupilRadius = 3; 
+    const maxPupilOffset = blackCircleRadius;
+
+    [pupil1Ref, pupil2Ref].forEach(ref => {
+        const pupil = ref.current;
+        if (!pupil) return;
+        const { left, top, width, height } = pupil.getBoundingClientRect();
         const eyeCenterX = left + width / 2;
         const eyeCenterY = top + height / 2;
         const deltaX = mouseX - eyeCenterX;
@@ -55,24 +58,32 @@ const DefaultEyes = ({ containerRef, mousePosition, ...props }: EyeProps) => {
         const pupilOffset = Math.min(Math.sqrt(deltaX ** 2 + deltaY ** 2), maxPupilOffset);
         const pupilX = Math.cos(angle) * pupilOffset;
         const pupilY = Math.sin(angle) * pupilOffset;
-        eye.style.transform = `translate(${pupilX}px, ${pupilY}px)`;
+        pupil.style.transform = `translate(${pupilX}px, ${pupilY}px)`;
     });
   }, [mousePosition, containerRef]);
 
   return (
     <svg width="100" height="100" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
-        <circle cx="24" cy="32" r="8" fill="white" />
-        <circle cx="40" cy="32" r="8" fill="white" />
-        <circle ref={eye1Ref} cx="24" cy="32" r="3" fill="black" />
-        <circle ref={eye2Ref} cx="40" cy="32" r="3" fill="black" />
+        {/* Eye 1 - Shifted left */}
+        <circle cx="22" cy="32" r="8" stroke="white" strokeWidth="2" fill="none" />
+        <circle cx="22" cy="32" r="6" fill="black" />
+        <circle ref={pupil1Ref} cx="22" cy="32" r="3" fill="white" />
+
+        {/* Eye 2 - Shifted right */}
+        <circle cx="42" cy="32" r="8" stroke="white" strokeWidth="2" fill="none" />
+        <circle cx="42" cy="32" r="6" fill="black" />
+        <circle ref={pupil2Ref} cx="42" cy="32" r="3" fill="white" />
     </svg>
   );
 };
 
+// Updated XEyes component with more space between the X's.
 const XEyes = (props: SVGProps<SVGSVGElement>) => (
   <svg width="100" height="100" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
-    <path d="M18 20 L30 32 M30 20 L18 32" stroke="white" strokeWidth="4" strokeLinecap="round"/>
-    <path d="M34 20 L46 32 M46 20 L34 32" stroke="white" strokeWidth="4" strokeLinecap="round"/>
+    {/* X 1 - Shifted left */}
+    <path d="M16 20 L28 32 M28 20 L16 32" stroke="white" strokeWidth="4" strokeLinecap="round"/>
+    {/* X 2 - Shifted right */}
+    <path d="M36 20 L48 32 M48 20 L36 32" stroke="white" strokeWidth="4" strokeLinecap="round"/>
   </svg>
 );
 
@@ -124,7 +135,8 @@ const IconContainer = ({ eyeType, mousePosition, isHovered, isAnotherCardHovered
         >
             <div style={iconTransform}>
                 {isClicked ? (
-                    <img src={activeIconSrc} alt="Active agent icon" className="w-32 h-32" />
+                    // Active icon is now smaller
+                    <img src={activeIconSrc} alt="Active agent icon" className="w-28 h-28" />
                 ) : eyeType === 'xx' ? (
                     <XEyes className="w-32 h-32" /> 
                 ) : (
