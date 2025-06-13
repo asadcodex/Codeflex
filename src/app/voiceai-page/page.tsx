@@ -122,7 +122,7 @@ const IconContainer = ({ eyeType, mousePosition, isHovered, isAnotherCardHovered
     return (
         <div 
             ref={iconRef} 
-            className="bg-black rounded-lg w-56 h-56 flex items-center justify-center overflow-hidden" 
+            className="bg-black mt-[30px] rounded-lg w-56 h-56 flex items-center justify-center overflow-hidden" 
             style={containerTransform}
         >
             <div style={iconTransform}>
