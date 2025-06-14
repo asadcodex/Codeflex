@@ -1,6 +1,5 @@
 'use client';
 
-import CornerElements from '@/components/CornerElements';
 import { useState, useEffect, useRef, SVGProps, createContext, useContext, ReactNode } from 'react';
 
 interface IHumeContext {
@@ -222,8 +221,7 @@ const AICard = ({ id, eyeType, poweredBy, activeIconSrc, mousePosition, activeCa
   const isMobile = useIsMobile();
   
   return (
-    <div className="bg-white realtive p-4 border-2 border-black shadow-[8px_8px_0px_#000000] flex flex-col items-center gap-4 w-full max-w-sm mx-auto transition-transform duration-300" onMouseEnter={() => !isMobile && onHover(id)} onMouseLeave={() => !isMobile && onHover(null)} style={{ transform: `scale(${isHovered && !isMobile ? 1.05 : 1})`, transition: 'transform 0.2s ease' }}>
-        <CornerElements />
+    <div className="bg-white p-4 border-2 border-black shadow-[8px_8px_0px_#000000] flex flex-col items-center gap-4 w-full max-w-sm mx-auto transition-transform duration-300" onMouseEnter={() => !isMobile && onHover(id)} onMouseLeave={() => !isMobile && onHover(null)} style={{ transform: `scale(${isHovered && !isMobile ? 1.05 : 1})`, transition: 'transform 0.2s ease' }}>
         <IconContainer eyeType={eyeType} mousePosition={mousePosition} isHovered={isHovered} isAnotherCardHovered={hoveredId !== null && !isHovered} isClicked={id === activeCardId} activeIconSrc={activeIconSrc} />
         <p className="text-center text-lg font-semibold text-gray-700">Powered By <span className="font-bold text-black">{poweredBy}</span></p>
         <button onClick={() => onActivate(id)} className="group mb-2.5 w-full bg-white border-2 border-black rounded-md py-3 px-6 text-lg font-bold hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black shadow-[4px_4px_0px_#000000] hover:shadow-[2px_2px_0px_#000000] active:shadow-none transform hover:-translate-y-px active:translate-y-0 overflow-hidden">
