@@ -226,7 +226,7 @@ const AICard = ({ id, poweredBy, onActivate, isActive, ...props }: CardProps) =>
 
   return (
     <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto" onMouseEnter={() => !isMobile && props.onHover(id)} onMouseLeave={() => !isMobile && props.onHover(null)}>
-        <div className="bg-white p-4 border-2 p-[60px] border-black rounded-lg shadow-[8px_8px_0px_#000000] flex flex-col justify-between gap-4 w-full h-[380px] sm:h-[420px]">
+        <div className="bg-white p-4 border-2 p-[60px] border-black shadow-[8px_8px_0px_#000000] flex flex-col justify-between gap-4 w-full h-[380px] sm:h-[420px]">
             <IconContainer {...props} isClicked={isActive} isHovered={id === props.hoveredId} isAnotherCardHovered={props.hoveredId !== null && id !== props.hoveredId}/>
             <div className='text-center'>
                 <p className="text-lg font-semibold text-gray-700">Powered By</p>
