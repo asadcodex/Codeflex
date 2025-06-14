@@ -1,48 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef, SVGProps, createContext, useContext, ReactNode } from 'react';
+import React, { useState, useEffect, useRef, SVGProps, ReactNode } from 'react';
 
-interface IHumeContext {
-    status: string;
-    connect: () => Promise<void>;
-    disconnect: () => void;
-}
-
-// --- MOCK HUME AI SDK ---
-const MockHumeVoiceContext = createContext<IHumeContext | null>(null);
-
-const MockHumeVoiceProvider = ({ children }: { children: ReactNode }) => {
-    const [status, setStatus] = useState('disconnected');
-    
-    const connect = () => {
-        setStatus('connecting');
-        setTimeout(() => setStatus('connected'), 2000);
-        return Promise.resolve();
-    };
-
-    const disconnect = () => {
-        setStatus('disconnected');
-    };
-
-    const value: IHumeContext = { status, connect, disconnect };
-
-    return (
-        <MockHumeVoiceContext.Provider value={value}>
-            {children}
-        </MockHumeVoiceContext.Provider>
-    );
-};
-
-const useVoice = () => {
-    const context = useContext(MockHumeVoiceContext);
-    if (!context) {
-        throw new Error('useVoice must be used within a VoiceProvider');
-    }
-    return context;
-};
-// --- END MOCK SDK ---
-
-
+// --- Custom Hook for Screen Size ---
 const useIsMobile = (breakpoint = 768): boolean => {
     const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < breakpoint);
 
@@ -56,17 +16,18 @@ const useIsMobile = (breakpoint = 768): boolean => {
     return isMobile;
 };
 
+// --- Type Definitions ---
 interface CardData {
   id: string;
   eyeType: 'default' | 'xx';
   poweredBy: string;
   activeIconSrc: string;
-  sdkType: 'hume' | 'openai';
 }
 
 interface CardProps extends CardData {
   mousePosition: { x: number; y: number };
-  activeCardId: string | null;
+  isActive: boolean;
+  isOtherActive: boolean;
   hoveredId: string | null;
   onHover: (id: string | null) => void;
   onActivate: (id: string | null) => void;
@@ -87,6 +48,7 @@ interface EyeProps extends SVGProps<SVGSVGElement> {
 }
 
 
+// --- SVG Eye Components ---
 const DefaultEyes = ({ containerRef, mousePosition, ...props }: EyeProps) => {
   const pupil1Ref = useRef<SVGCircleElement>(null);
   const pupil2Ref = useRef<SVGCircleElement>(null);
@@ -96,6 +58,8 @@ const DefaultEyes = ({ containerRef, mousePosition, ...props }: EyeProps) => {
     const animate = () => {
         const pupils = [pupil1Ref.current, pupil2Ref.current];
         if (!containerRef.current || pupils.some(p => !p)) return;
+        
+        const maxPupilOffset = 2.5;
 
         if (isMobile) {
             const { top, bottom, height } = containerRef.current.getBoundingClientRect();
@@ -103,15 +67,13 @@ const DefaultEyes = ({ containerRef, mousePosition, ...props }: EyeProps) => {
                 const viewportCenter = window.innerHeight / 2;
                 const elementCenter = top + height / 2;
                 const deltaY = viewportCenter - elementCenter;
-                const maxPupilOffset = 2.5;
-                const pupilY = Math.max(-1, Math.min(1, deltaY / (viewportCenter * 0.5))) * -maxPupilOffset;
+                const pupilY = Math.max(-1, Math.min(1, deltaY / (viewportCenter * 0.5))) * maxPupilOffset;
                 pupils.forEach(pupil => {
                     if(pupil) pupil.style.transform = `translateY(${pupilY}px)`;
                 });
             }
         } else {
             const { x: mouseX, y: mouseY } = mousePosition;
-            const maxPupilOffset = 2.5;
             pupils.forEach(pupil => {
                 if (!pupil) return;
                 const { left, top, width, height } = pupil.getBoundingClientRect();
@@ -140,19 +102,20 @@ const DefaultEyes = ({ containerRef, mousePosition, ...props }: EyeProps) => {
 
   return (
     <svg width="100" height="100" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
-        <g><circle cx="22" cy="32" r="8" fill="white" /><circle ref={pupil1Ref} cx="22" cy="32" r="7" fill="black" /></g>
-        <g><circle cx="42" cy="32" r="8" fill="white" /><circle ref={pupil2Ref} cx="42" cy="32" r="7" fill="black" /></g>
+        <g><circle cx="20" cy="32" r="10" fill="white" /><circle ref={pupil1Ref} cx="20" cy="32" r="9" fill="black" /></g>
+        <g><circle cx="44" cy="32" r="10" fill="white" /><circle ref={pupil2Ref} cx="44" cy="32" r="9" fill="black" /></g>
     </svg>
   );
 };
 
 const XEyes = (props: SVGProps<SVGSVGElement>) => (
   <svg width="100" height="100" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
-    <path d="M16 20 L28 32 M28 20 L16 32" stroke="white" strokeWidth="4" strokeLinecap="round"/>
-    <path d="M36 20 L48 32 M48 20 L36 32" stroke="white" strokeWidth="4" strokeLinecap="round"/>
+    <path d="M14 20 L26 32 M26 20 L14 32" stroke="white" strokeWidth="4" strokeLinecap="round"/>
+    <path d="M38 20 L50 32 M50 20 L38 32" stroke="white" strokeWidth="4" strokeLinecap="round"/>
   </svg>
 );
 
+// --- Icon Container with Animation ---
 const IconContainer = ({ eyeType, mousePosition, isHovered, isAnotherCardHovered, isClicked, activeIconSrc }: IconContainerProps) => {
     const iconRef = useRef<HTMLDivElement>(null);
     const [containerTransform, setContainerTransform] = useState({});
@@ -170,12 +133,13 @@ const IconContainer = ({ eyeType, mousePosition, isHovered, isAnotherCardHovered
                     const elementCenter = top + height / 2;
                     const deltaY = viewportCenter - elementCenter;
                     const maxOffset = 8;
-                    const translateY = Math.max(-1, Math.min(1, deltaY / (viewportCenter * 0.5))) * -maxOffset;
+                    const translateY = Math.max(-1, Math.min(1, deltaY / (viewportCenter * 0.5))) * maxOffset;
                     setIconTransform({ transform: `translateY(${translateY}px)` });
                 }
                 setContainerTransform({});
              } else {
-                if (isAnotherCardHovered) {
+                 // Updated logic to isolate hover effect
+                if (!isHovered) {
                     setContainerTransform({ transform: 'perspective(1000px) rotateX(0deg) rotateY(0deg)' });
                     setIconTransform({ transform: 'translate(0px, 0px)' });
                     return;
@@ -186,11 +150,11 @@ const IconContainer = ({ eyeType, mousePosition, isHovered, isAnotherCardHovered
                 const centerY = top + height / 2;
                 const deltaX = mouseX - centerX;
                 const deltaY = mouseY - centerY;
-                const maxRotation = isHovered ? 4 : 1;
+                const maxRotation = 1; // Only apply rotation on hover
                 const rotateX = (deltaY / (height / 2)) * -maxRotation;
                 const rotateY = (deltaX / (width / 2)) * maxRotation;
                 setContainerTransform({ transform: `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)` });
-                const maxOffset = isHovered ? 8 : 4;
+                const maxOffset = 2; // Only apply offset on hover
                 const translateX = (deltaX / (width / 2)) * maxOffset;
                 const translateY = (deltaY / (height / 2)) * maxOffset;
                 setIconTransform({ transform: `translate(${translateX}px, ${translateY}px)`});
@@ -207,76 +171,73 @@ const IconContainer = ({ eyeType, mousePosition, isHovered, isAnotherCardHovered
     }, [mousePosition, isHovered, isAnotherCardHovered, isClicked, isMobile]);
 
     return (
-        <div ref={iconRef} className="bg-black mt-[35px] rounded-lg w-48 h-48 sm:w-56 sm:h-56 flex items-center justify-center overflow-hidden transition-transform duration-100" style={containerTransform}>
+        <div ref={iconRef} className="bg-black rounded-3xl w-full aspect-square flex items-center justify-center overflow-hidden transition-transform duration-100" style={containerTransform}>
             <div className="transition-transform duration-100" style={iconTransform}>
-                {isClicked ? <img src={activeIconSrc} alt="Active agent icon" className="w-24 h-24 sm:w-28 sm:h-28" /> : eyeType === 'xx' ? <XEyes className="w-28 h-28 sm:w-32 sm:h-32" /> : <DefaultEyes containerRef={iconRef} mousePosition={mousePosition} className="w-28 h-28 sm:w-32 sm:h-32" />}
+                {isClicked ? <img src={activeIconSrc} alt="Active agent icon" className="w-24 h-24 sm:w-28 sm:h-28" /> : eyeType === 'xx' ? <XEyes className="w-36 h-36 sm:w-40 sm:h-40" /> : <DefaultEyes containerRef={iconRef} mousePosition={mousePosition} className="w-36 h-36 sm:w-40 sm:h-40" />}
             </div>
         </div>
     )
 }
 
 // --- Card Component ---
-const AICard = ({ id, eyeType, poweredBy, activeIconSrc, mousePosition, activeCardId, hoveredId, onHover, onActivate }: CardProps) => {
-  const isHovered = id === hoveredId;
+const AICard = ({ id, poweredBy, onActivate, isActive, ...props }: CardProps) => {
   const isMobile = useIsMobile();
+  const [connectionState, setConnectionState] = useState('idle'); // idle, connecting, connected
+  const [dots, setDots] = useState('');
+
+  useEffect(() => {
+    if (isActive) {
+      setConnectionState('connecting');
+      const timer = setTimeout(() => {
+        setConnectionState('connected');
+      }, 2000);
+      return () => clearTimeout(timer);
+    } else {
+      setConnectionState('idle');
+    }
+  }, [isActive]);
+
+  useEffect(() => {
+      let interval: NodeJS.Timeout | null = null;
+      if (connectionState === 'connecting') {
+          interval = setInterval(() => {
+              setDots(prev => prev.length >= 3 ? '.' : prev + '.');
+          }, 400);
+      } else {
+          setDots('');
+      }
+      return () => {
+          if (interval) clearInterval(interval);
+      };
+  }, [connectionState]);
+
+  const getButtonText = () => {
+      switch (connectionState) {
+          case 'connecting':
+              return `Starting voice agent${dots}`;
+          case 'connected':
+              return 'Click to stop';
+          default:
+              return 'CLICK ME';
+      }
+  };
   
+  const buttonTextColor = connectionState === 'idle' ? 'text-black' : 'text-gray-600';
+
   return (
-    <div className="bg-white p-4 border-2 border-black shadow-[8px_8px_0px_#000000] flex flex-col items-center gap-4 w-full max-w-sm mx-auto transition-transform duration-300" onMouseEnter={() => !isMobile && onHover(id)} onMouseLeave={() => !isMobile && onHover(null)} style={{ transform: `scale(${isHovered && !isMobile ? 1.05 : 1})`, transition: 'transform 0.2s ease' }}>
-        <IconContainer eyeType={eyeType} mousePosition={mousePosition} isHovered={isHovered} isAnotherCardHovered={hoveredId !== null && !isHovered} isClicked={id === activeCardId} activeIconSrc={activeIconSrc} />
-        <p className="text-center text-lg font-semibold text-gray-700">Powered By <span className="font-bold text-black">{poweredBy}</span></p>
-        <button onClick={() => onActivate(id)} className="group mb-2.5 w-full bg-white border-2 border-black rounded-md py-3 px-6 text-lg font-bold hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black shadow-[4px_4px_0px_#000000] hover:shadow-[2px_2px_0px_#000000] active:shadow-none transform hover:-translate-y-px active:translate-y-0 overflow-hidden">
-            <span className="inline-block text-black transition-transform duration-200 ease-in-out group-hover:scale-105">CLICK ME</span>
+    <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto" onMouseEnter={() => !isMobile && props.onHover(id)} onMouseLeave={() => !isMobile && props.onHover(null)}>
+        <div className="bg-white p-4 border-2 p-[60px] border-black rounded-lg shadow-[8px_8px_0px_#000000] flex flex-col justify-between gap-4 w-full h-[380px] sm:h-[420px]">
+            <IconContainer {...props} isClicked={isActive} isHovered={id === props.hoveredId} isAnotherCardHovered={props.hoveredId !== null && id !== props.hoveredId}/>
+            <div className='text-center'>
+                <p className="text-lg font-semibold text-gray-700">Powered By</p>
+                <p className="font-bold text-black text-xl">{poweredBy}</p>
+            </div>
+        </div>
+        <button onClick={() => onActivate(isActive ? null : id)} className="w-full bg-white border-2 border-black py-3 px-6 text-lg font-bold transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black shadow-[8px_8px_0px_#000000]">
+            <span className={`inline-block ${buttonTextColor}`}>{getButtonText()}</span>
         </button>
     </div>
   );
-};
-
-interface VoiceAgentUIProps {
-    agent: CardData;
-    onClose: () => void;
-}
-
-const VoiceAgentUI = ({ agent, onClose }: VoiceAgentUIProps) => {
-    const [connectionStatus, setConnectionStatus] = useState('disconnected');
-    const hume = useVoice();
-
-    useEffect(() => {
-        if (!agent) return;
-        if (agent.sdkType === 'hume') {
-            hume.connect();
-        } else {
-            setConnectionStatus('connecting');
-            const timer = setTimeout(() => setConnectionStatus('connected'), 2000);
-            return () => clearTimeout(timer);
-        }
-    }, [agent, hume]);
-
-    const handleDisconnect = () => {
-        if (agent.sdkType === 'hume') {
-            hume.disconnect();
-        }
-        onClose();
-    };
-    
-    const getStatusText = () => {
-        if (agent.sdkType === 'hume') {
-            return hume.status.charAt(0).toUpperCase() + hume.status.slice(1) + '...';
-        }
-        return connectionStatus.charAt(0).toUpperCase() + connectionStatus.slice(1) + '...';
-    };
-
-    return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-lg p-8 border-2 border-black shadow-[8px_8px_0px_#000000] flex flex-col items-center gap-6 w-full max-w-md">
-                <img src={agent.activeIconSrc} alt={`${agent.poweredBy} logo`} className="w-24 h-24" />
-                <h2 className="text-2xl text-black font-bold">{agent.poweredBy} Agent</h2>
-                <p className="text-lg text-gray-600 animate-pulse">{getStatusText()}</p>
-                <button onClick={handleDisconnect} className="w-full bg-red-500 text-white border-2 border-black rounded-md py-3 px-6 text-lg font-bold hover:bg-red-600 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black shadow-[4px_4px_0px_#000000] hover:shadow-[2px_2px_0px_#000000] active:shadow-none transform hover:-translate-y-px active:translate-y-0">
-                    Disconnect
-                </button>
-            </div>
-        </div>
-    );
 };
 
 
@@ -288,24 +249,20 @@ const App = () => {
   const isMobile = useIsMobile();
 
   const cardData: CardData[] = [
-    { id: 'openai', eyeType: 'default', poweredBy: 'OPENAI', activeIconSrc: '/chat.svg', sdkType: 'openai' },
-    { id: 'gemini', eyeType: 'xx', poweredBy: 'HUMEAI', activeIconSrc: '/hume.svg', sdkType: 'hume' },
-    { id: 'ultravox', eyeType: 'default', poweredBy: 'GEMINI', activeIconSrc: '/gemini.svg', sdkType: 'openai' },
+    { id: 'openai', eyeType: 'default', poweredBy: 'OPENAI', activeIconSrc: '/chat.svg' },
+    { id: 'gemini', eyeType: 'xx', poweredBy: 'HUMEAI', activeIconSrc: '/hume.svg' },
+    { id: 'ultravox', eyeType: 'default', poweredBy: 'GEMINI', activeIconSrc: '/gemini.svg' },
   ];
   
-  const activeAgent = cardData.find(card => card.id === activeCardId) || null;
-
   useEffect(() => {
-    if(isMobile || activeAgent) return;
+    if(isMobile || activeCardId) return;
     const handleMouseMove = (event: MouseEvent) => setMousePosition({ x: event.clientX, y: event.clientY });
     window.addEventListener('mousemove', handleMouseMove);
     return () => window.removeEventListener('mousemove', handleMouseMove);
-  }, [isMobile, activeAgent]);
+  }, [isMobile, activeCardId]);
 
   return (
     <div className="bg-gray-50 min-h-screen font-sans flex flex-col items-center p-4 sm:p-8 overflow-x-hidden">
-        {activeAgent && <VoiceAgentUI agent={activeAgent} onClose={() => setActiveCardId(null)} />}
-        
         <div className="text-center max-w-4xl mx-auto mb-12 w-full">
             <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold text-black mb-4">
               Voice AI Constellation
@@ -315,19 +272,25 @@ const App = () => {
             </p>
         </div>
 
-        <div className="w-full max-w-6xl grid grid-cols-1 md:grid-cols-3 gap-12 md:gap-8">
+        <div className="w-full max-w-6xl grid grid-cols-1 md:grid-cols-3 gap-y-16 md:gap-8">
             {cardData.map((card) => (
-              <AICard key={card.id} {...card} mousePosition={mousePosition} hoveredId={hoveredCardId} activeCardId={activeCardId} onHover={setHoveredCardId} onActivate={setActiveCardId}/>
+              <AICard 
+                key={card.id} 
+                {...card} 
+                mousePosition={mousePosition} 
+                hoveredId={hoveredCardId}
+                isActive={activeCardId === card.id}
+                isOtherActive={activeCardId !== null && activeCardId !== card.id}
+                onHover={setHoveredCardId} 
+                onActivate={setActiveCardId}
+              />
             ))}
         </div>
     </div>
   );
 }
 
+// The final export remains the same
 export default function ProvidedApp() {
-    return (
-        <MockHumeVoiceProvider>
-            <App />
-        </MockHumeVoiceProvider>
-    );
+    return <App />;
 }
