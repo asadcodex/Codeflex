@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, SVGProps, ReactNode } from 'react';
+import React, { useState, useEffect, useRef, SVGProps} from 'react';
 
 // --- Custom Hook for Screen Size ---
 const useIsMobile = (breakpoint = 768): boolean => {
