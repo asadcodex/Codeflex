@@ -217,7 +217,7 @@ const IconContainer = ({ eyeType, mousePosition, isHovered, isAnotherCardHovered
 }
 
 // --- Card Component ---
-const AICard = ({ id, eyeType, poweredBy, activeIconSrc, sdkType, mousePosition, activeCardId, hoveredId, onHover, onActivate }: CardProps) => {
+const AICard = ({ id, eyeType, poweredBy, activeIconSrc, mousePosition, activeCardId, hoveredId, onHover, onActivate }: CardProps) => {
   const isHovered = id === hoveredId;
   const isMobile = useIsMobile();
   
