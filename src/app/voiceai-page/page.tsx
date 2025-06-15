@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useRef, SVGProps} from 'react';
 
-// --- Custom Hook for Screen Size ---
 const useIsMobile = (breakpoint = 768): boolean => {
     const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < breakpoint);
 
@@ -16,12 +15,10 @@ const useIsMobile = (breakpoint = 768): boolean => {
     return isMobile;
 };
 
-// --- Type Definitions ---
 interface CardData {
   id: string;
   eyeType: 'default' | 'xx';
   poweredBy: string;
-  activeIconSrc: string;
 }
 
 interface CardProps extends CardData {
@@ -39,7 +36,6 @@ interface IconContainerProps {
     isHovered: boolean;
     isAnotherCardHovered: boolean;
     isClicked: boolean;
-    activeIconSrc: string;
 }
 
 interface EyeProps extends SVGProps<SVGSVGElement> {
@@ -48,7 +44,6 @@ interface EyeProps extends SVGProps<SVGSVGElement> {
 }
 
 
-// --- SVG Eye Components ---
 const DefaultEyes = ({ containerRef, mousePosition, ...props }: EyeProps) => {
   const pupil1Ref = useRef<SVGCircleElement>(null);
   const pupil2Ref = useRef<SVGCircleElement>(null);
@@ -181,7 +176,7 @@ const IconContainer = ({ eyeType, mousePosition, isHovered, isAnotherCardHovered
 // --- Card Component ---
 const AICard = ({ id, poweredBy, onActivate, isActive, ...props }: CardProps) => {
   const isMobile = useIsMobile();
-  const [connectionState, setConnectionState] = useState('idle'); // idle, connecting, connected
+  const [connectionState, setConnectionState] = useState('idle');
   const [dots, setDots] = useState('');
 
   useEffect(() => {
@@ -240,7 +235,6 @@ const AICard = ({ id, poweredBy, onActivate, isActive, ...props }: CardProps) =>
 };
 
 
-// --- Main App Component ---
 const App = () => {
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [hoveredCardId, setHoveredCardId] = useState<string | null>(null);
@@ -248,17 +242,18 @@ const App = () => {
   const isMobile = useIsMobile();
 
   const cardData: CardData[] = [
-    { id: 'openai', eyeType: 'default', poweredBy: 'OPENAI', activeIconSrc: '/chat.svg' },
-    { id: 'gemini', eyeType: 'xx', poweredBy: 'HUMEAI', activeIconSrc: '/hume.svg' },
-    { id: 'ultravox', eyeType: 'default', poweredBy: 'GEMINI', activeIconSrc: '/gemini.svg' },
+    { id: 'openai', eyeType: 'default', poweredBy: 'OPENAI' },
+    { id: 'gemini', eyeType: 'xx', poweredBy: 'HUMEAI' },
+    { id: 'ultravox', eyeType: 'default', poweredBy: 'GEMINI' },
   ];
   
   useEffect(() => {
-    if(isMobile || activeCardId) return;
+    if (isMobile) return; 
+
     const handleMouseMove = (event: MouseEvent) => setMousePosition({ x: event.clientX, y: event.clientY });
     window.addEventListener('mousemove', handleMouseMove);
     return () => window.removeEventListener('mousemove', handleMouseMove);
-  }, [isMobile, activeCardId]);
+  }, [isMobile]);
 
   return (
     <div className="bg-gray-50 min-h-screen font-sans flex flex-col items-center p-4 sm:p-8 overflow-x-hidden">
@@ -289,7 +284,6 @@ const App = () => {
   );
 }
 
-// The final export remains the same
 export default function ProvidedApp() {
     return <App />;
 }
