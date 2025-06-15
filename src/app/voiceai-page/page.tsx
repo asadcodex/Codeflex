@@ -110,8 +110,8 @@ const DefaultEyes = ({ containerRef, mousePosition, ...props }: EyeProps) => {
 
 const XEyes = (props: SVGProps<SVGSVGElement>) => (
   <svg width="100" height="100" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
-    <path d="M14 20 L26 32 M26 20 L14 32" stroke="white" strokeWidth="4" strokeLinecap="round"/>
-    <path d="M38 20 L50 32 M50 20 L38 32" stroke="white" strokeWidth="4" strokeLinecap="round"/>
+    <path d="M11 23 L29 41 M29 23 L11 41" stroke="white" strokeWidth="4" strokeLinecap="round"/>
+    <path d="M35 23 L53 41 M53 23 L35 41" stroke="white" strokeWidth="4" strokeLinecap="round"/>
   </svg>
 );
 
