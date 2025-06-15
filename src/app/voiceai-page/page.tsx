@@ -116,7 +116,7 @@ const XEyes = (props: SVGProps<SVGSVGElement>) => (
 );
 
 // --- Icon Container with Animation ---
-const IconContainer = ({ eyeType, mousePosition, isHovered, isAnotherCardHovered, isClicked, activeIconSrc }: IconContainerProps) => {
+const IconContainer = ({ eyeType, mousePosition, isHovered, isAnotherCardHovered }: IconContainerProps) => {
     const iconRef = useRef<HTMLDivElement>(null);
     const [containerTransform, setContainerTransform] = useState({});
     const [iconTransform, setIconTransform] = useState({});
@@ -138,7 +138,6 @@ const IconContainer = ({ eyeType, mousePosition, isHovered, isAnotherCardHovered
                 }
                 setContainerTransform({});
              } else {
-                 // Updated logic to isolate hover effect
                 if (!isHovered) {
                     setContainerTransform({ transform: 'perspective(1000px) rotateX(0deg) rotateY(0deg)' });
                     setIconTransform({ transform: 'translate(0px, 0px)' });
@@ -150,11 +149,11 @@ const IconContainer = ({ eyeType, mousePosition, isHovered, isAnotherCardHovered
                 const centerY = top + height / 2;
                 const deltaX = mouseX - centerX;
                 const deltaY = mouseY - centerY;
-                const maxRotation = 1; // Only apply rotation on hover
+                const maxRotation = 1;
                 const rotateX = (deltaY / (height / 2)) * -maxRotation;
                 const rotateY = (deltaX / (width / 2)) * maxRotation;
                 setContainerTransform({ transform: `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)` });
-                const maxOffset = 2; // Only apply offset on hover
+                const maxOffset = 2;
                 const translateX = (deltaX / (width / 2)) * maxOffset;
                 const translateY = (deltaY / (height / 2)) * maxOffset;
                 setIconTransform({ transform: `translate(${translateX}px, ${translateY}px)`});
@@ -168,12 +167,12 @@ const IconContainer = ({ eyeType, mousePosition, isHovered, isAnotherCardHovered
         } else {
             animate();
         }
-    }, [mousePosition, isHovered, isAnotherCardHovered, isClicked, isMobile]);
+    }, [mousePosition, isHovered, isAnotherCardHovered, isMobile]);
 
     return (
         <div ref={iconRef} className="bg-black rounded-3xl w-full aspect-square flex items-center justify-center overflow-hidden transition-transform duration-100" style={containerTransform}>
             <div className="transition-transform duration-100" style={iconTransform}>
-                {isClicked ? <img src={activeIconSrc} alt="Active agent icon" className="w-24 h-24 sm:w-28 sm:h-28" /> : eyeType === 'xx' ? <XEyes className="w-36 h-36 sm:w-40 sm:h-40" /> : <DefaultEyes containerRef={iconRef} mousePosition={mousePosition} className="w-36 h-36 sm:w-40 sm:h-40" />}
+                {eyeType === 'xx' ? <XEyes className="w-36 h-36 sm:w-40 sm:h-40" /> : <DefaultEyes containerRef={iconRef} mousePosition={mousePosition} className="w-36 h-36 sm:w-40 sm:h-40" />}
             </div>
         </div>
     )
