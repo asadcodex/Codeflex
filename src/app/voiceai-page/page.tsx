@@ -1,30 +1,21 @@
 'use client';
 
 import React, { useState, useEffect, useRef, SVGProps } from 'react';
+import { OpenAI } from 'openai';
 
-// --- Custom Hook for Screen Size ---
-const useIsMobile = (breakpoint = 768): boolean => {
-    const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < breakpoint);
-
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-        const checkScreenSize = () => setIsMobile(window.innerWidth < breakpoint);
-        window.addEventListener('resize', checkScreenSize);
-        return () => window.removeEventListener('resize', checkScreenSize);
-    }, [breakpoint]);
-
-    return isMobile;
-};
+// --- IMPORTANT: API KEY CONFIGURATION ---
+// For this client-side demo to work, you must add your OpenAI API key below.
+// NOTE: This is for testing purposes only. Do NOT commit this key to a public repository.
+const OPENAI_API_KEY = "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";
 
 // --- Custom Hook for Voice Agent Logic ---
-const useVoiceAgent = ({ onStateChange, setErrorMessage }: { onStateChange: (status: string) => void; setErrorMessage: (message: string) => void; }) => {
+const useVoiceAgent = ({ provider, onStateChange, setErrorMessage }: { provider: string; onStateChange: (status: string) => void; setErrorMessage: (message: string) => void; }) => {
     const [status, setStatus] = useState('idle');
-    const socketRef = useRef<WebSocket | null>(null);
+    const openaiRef = useRef<OpenAI | null>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioQueueRef = useRef<Blob[]>([]);
     const isPlayingRef = useRef(false);
     const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
-    const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
     useEffect(() => {
         audioPlayerRef.current = new Audio();
@@ -39,107 +30,113 @@ const useVoiceAgent = ({ onStateChange, setErrorMessage }: { onStateChange: (sta
         onStateChange('speaking');
 
         const audioBlob = audioQueueRef.current.shift();
-        
         if (audioBlob) {
             const audioUrl = URL.createObjectURL(audioBlob);
             audioPlayerRef.current.src = audioUrl;
             audioPlayerRef.current.play();
-
             audioPlayerRef.current.onended = () => {
                 isPlayingRef.current = false;
                 processAudioQueue();
             };
         } else {
-             isPlayingRef.current = false;
+            isPlayingRef.current = false;
         }
     };
 
     const connect = async () => {
-        try {
-            setStatus('connecting');
-            onStateChange('connecting');
+        if (!OPENAI_API_KEY || OPENAI_API_KEY === "YOUR_OPENAI_API_KEY_HERE") {
+            setErrorMessage("API Key is missing.");
+            onStateChange('error');
+            return;
+        }
 
+        setStatus('connecting');
+        onStateChange('connecting');
+
+        try {
+            // Initialize OpenAI client on connect
+            openaiRef.current = new OpenAI({
+                apiKey: OPENAI_API_KEY,
+                dangerouslyAllowBrowser: true, // Required for client-side usage
+            });
+
+            // Get microphone permissions
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const host = window.location.host;
-            const wsUrl = `${protocol}//${host}/api/voice`;
+            // Send welcome message
+            const welcomeMessage = `Hello! I'm a voice agent powered by ${provider}. How can I help you?`;
+            const speechResponse = await openaiRef.current.audio.speech.create({
+                model: "tts-1",
+                voice: "alloy",
+                input: welcomeMessage,
+                response_format: "mp3",
+            });
+            const audioBlob = await speechResponse.blob();
+            audioQueueRef.current.push(audioBlob);
+            processAudioQueue();
             
-            socketRef.current = new WebSocket(wsUrl);
+            setStatus('listening');
+            onStateChange('listening');
+            
+            // Setup MediaRecorder
+            mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+            mediaRecorderRef.current.start(500);
 
-            socketRef.current.onopen = () => {
-                console.log('Frontend: WebSocket connection established.');
-                mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-
-                mediaRecorderRef.current.ondataavailable = (event) => {
-                    if (event.data.size > 0 && socketRef.current?.readyState === WebSocket.OPEN) {
-                        socketRef.current.send(event.data);
-                    }
-                };
-                
-                mediaRecorderRef.current.start(500);
-
-                pingIntervalRef.current = setInterval(() => {
-                    if (socketRef.current?.readyState === WebSocket.OPEN) {
-                        socketRef.current.send(JSON.stringify({ type: 'ping' }));
-                    }
-                }, 10000);
-            };
-
-            socketRef.current.onmessage = (event) => {
-                if (event.data instanceof Blob) {
-                    audioQueueRef.current.push(event.data);
-                    processAudioQueue();
-                } else {
-                    try {
-                        const data = JSON.parse(event.data);
-                        if (data.status === 'connected') {
-                            setStatus('listening');
-                            onStateChange('listening');
-                            console.log('Frontend: Voice agent is ready and listening.');
-                        } else if (data.error) {
-                            console.error("Frontend: Received error from server:", data.error);
-                            setErrorMessage(data.error);
-                            setStatus('error');
-                            onStateChange('error');
-                            disconnect();
-                        }
-                    } catch {
-                        // Fixed: Removed unused variable 'e'
-                        console.log("Received non-JSON message:", event.data)
-                    }
+            mediaRecorderRef.current.ondataavailable = async (event) => {
+                if (event.data.size > 0) {
+                    await handleUserAudio(event.data);
                 }
             };
-            
-             socketRef.current.onclose = () => {
-                console.log('WebSocket disconnected');
-                setStatus('idle');
-                onStateChange('idle');
-                if (mediaRecorderRef.current?.state === 'recording') {
-                    mediaRecorderRef.current.stop();
-                }
-                if(pingIntervalRef.current) clearInterval(pingIntervalRef.current);
-            };
-
-            socketRef.current.onerror = (error) => {
-                console.error('Frontend: WebSocket error:', error);
-                setErrorMessage("Connection failed.");
-                setStatus('error');
-                onStateChange('error');
-            };
-
         } catch (error) {
-            console.error('Failed to get microphone access:', error);
-            setErrorMessage("Microphone access denied.");
-            setStatus('error');
+            console.error("Connection or Welcome Message failed:", error);
+            setErrorMessage(error instanceof Error ? error.message : "An unknown error occurred.");
             onStateChange('error');
+        }
+    };
+
+    const handleUserAudio = async (audioBlob: Blob) => {
+        if (!openaiRef.current) return;
+        try {
+            const file = new File([audioBlob], "input.webm", { type: "audio/webm" });
+            const transcription = await openaiRef.current.audio.transcriptions.create({
+                file,
+                model: "whisper-1",
+            });
+            
+            if (!transcription.text?.trim()) return;
+
+            const chatCompletion = await openaiRef.current.chat.completions.create({
+                messages: [{ role: "user", content: transcription.text }],
+                model: "gpt-4",
+            });
+
+            const gptResponse = chatCompletion.choices[0].message.content;
+            if (gptResponse) {
+                const speechResponse = await openaiRef.current.audio.speech.create({
+                    model: "tts-1",
+                    voice: "nova",
+                    input: gptResponse,
+                });
+                const responseBlob = await speechResponse.blob();
+                audioQueueRef.current.push(responseBlob);
+                processAudioQueue();
+            }
+        } catch (error) {
+            console.error("Error processing user audio:", error);
         }
     };
     
     const disconnect = () => {
-        if (socketRef.current) {
-            socketRef.current.close();
+        if (mediaRecorderRef.current?.state === 'recording') {
+            mediaRecorderRef.current.stop();
         }
+        audioQueueRef.current = [];
+        if (audioPlayerRef.current) {
+            audioPlayerRef.current.pause();
+            audioPlayerRef.current.src = "";
+        }
+        setStatus('idle');
+        onStateChange('idle');
     };
 
     useEffect(() => {
@@ -149,12 +146,25 @@ const useVoiceAgent = ({ onStateChange, setErrorMessage }: { onStateChange: (sta
         }
     }, [status, onStateChange]);
 
-
     return { status, connect, disconnect };
 };
 
 
-// --- Type Definitions ---
+// --- UI Components (No changes needed below this line) ---
+
+const useIsMobile = (breakpoint = 768): boolean => {
+    const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < breakpoint);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const checkScreenSize = () => setIsMobile(window.innerWidth < breakpoint);
+        window.addEventListener('resize', checkScreenSize);
+        return () => window.removeEventListener('resize', checkScreenSize);
+    }, [breakpoint]);
+
+    return isMobile;
+};
+
 interface CardData {
   id: string;
   eyeType: 'default' | 'xx';
@@ -164,7 +174,6 @@ interface CardData {
 interface CardProps extends CardData {
   mousePosition: { x: number; y: number };
   isActive: boolean;
-  isOtherActive?: boolean;
   hoveredId: string | null;
   onHover: (id: string | null) => void;
   onActivate: (id: string | null) => void;
@@ -174,7 +183,6 @@ interface IconContainerProps {
     eyeType: 'default' | 'xx';
     mousePosition: { x: number; y: number };
     isHovered: boolean;
-    isAnotherCardHovered?: boolean;
 }
 
 interface EyeProps extends SVGProps<SVGSVGElement> {
@@ -182,8 +190,6 @@ interface EyeProps extends SVGProps<SVGSVGElement> {
     mousePosition: { x: number; y: number };
 }
 
-
-// --- SVG Eye Components ---
 const DefaultEyes = ({ containerRef, mousePosition, ...props }: EyeProps) => {
   const pupil1Ref = useRef<SVGCircleElement>(null);
   const pupil2Ref = useRef<SVGCircleElement>(null);
@@ -250,7 +256,6 @@ const XEyes = (props: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-// --- Icon Container with Animation ---
 const IconContainer = ({ eyeType, mousePosition, isHovered }: IconContainerProps) => {
     const iconRef = useRef<HTMLDivElement>(null);
     const [containerTransform, setContainerTransform] = useState({});
@@ -313,12 +318,11 @@ const IconContainer = ({ eyeType, mousePosition, isHovered }: IconContainerProps
     )
 }
 
-// --- Card Component ---
 const AICard = ({ id, eyeType, poweredBy, onActivate, isActive, mousePosition, hoveredId, onHover }: CardProps) => {
   const isMobile = useIsMobile();
   const [agentStatus, setAgentStatus] = useState('idle');
   const [errorMessage, setErrorMessage] = useState("");
-  const { connect, disconnect } = useVoiceAgent({ onStateChange: setAgentStatus, setErrorMessage });
+  const { connect, disconnect } = useVoiceAgent({ provider: poweredBy, onStateChange: setAgentStatus, setErrorMessage });
   const [dots, setDots] = useState('');
 
   const handleToggleConnection = () => {
@@ -366,7 +370,6 @@ const AICard = ({ id, eyeType, poweredBy, onActivate, isActive, mousePosition, h
                 eyeType={eyeType} 
                 mousePosition={mousePosition} 
                 isHovered={id === hoveredId} 
-                isAnotherCardHovered={hoveredId !== null && id !== hoveredId}
             />
             <div className='text-center mt-auto'>
                 <p className="text-lg font-semibold text-gray-700">Powered By</p>
@@ -380,8 +383,6 @@ const AICard = ({ id, eyeType, poweredBy, onActivate, isActive, mousePosition, h
   );
 };
 
-
-// --- Main App Component ---
 const App = () => {
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [hoveredCardId, setHoveredCardId] = useState<string | null>(null);
@@ -420,7 +421,6 @@ const App = () => {
                 mousePosition={mousePosition} 
                 hoveredId={hoveredCardId}
                 isActive={activeCardId === card.id}
-                isOtherActive={activeCardId !== null && activeCardId !== card.id}
                 onHover={setHoveredCardId} 
                 onActivate={setActiveCardId}
               />
