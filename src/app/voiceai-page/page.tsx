@@ -41,7 +41,7 @@ interface IconContainerProps {
   mousePosition: { x: number; y: number };
   isHovered: boolean;
   isAnotherCardHovered: boolean;
-  isClicked: boolean;
+  // 'isClicked' prop was removed as it was unused.
 }
 
 interface EyeProps extends SVGProps<SVGSVGElement> {
@@ -115,7 +115,7 @@ const XEyes = (props: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-const IconContainer = ({ eyeType, mousePosition, isHovered, isAnotherCardHovered, isClicked }: IconContainerProps) => {
+const IconContainer = ({ eyeType, mousePosition, isHovered, isAnotherCardHovered }: IconContainerProps) => {
   const iconRef = useRef<HTMLDivElement>(null);
   const [containerTransform, setContainerTransform] = useState({});
   const [iconTransform, setIconTransform] = useState({});
@@ -212,7 +212,6 @@ const AICard = ({ id, poweredBy, onActivate, isActive, ...props }: CardProps) =>
     console.log('🛑 Cleaning up voice...');
     isActiveRef.current = false;
     
-    // Stop recognition
     if (recognitionRef.current) {
       try {
         recognitionRef.current.abort();
@@ -224,7 +223,6 @@ const AICard = ({ id, poweredBy, onActivate, isActive, ...props }: CardProps) =>
       }
     }
     
-    // Stop speech synthesis
     try {
       window.speechSynthesis.cancel();
     } catch (e) {
@@ -243,10 +241,8 @@ const AICard = ({ id, poweredBy, onActivate, isActive, ...props }: CardProps) =>
 
       console.log('🔊 Speaking:', text);
       
-      // Cancel any existing speech
       window.speechSynthesis.cancel();
       
-      // Small delay to ensure cancellation is complete
       setTimeout(() => {
         if (!isActiveRef.current) {
           resolve();
@@ -265,7 +261,7 @@ const AICard = ({ id, poweredBy, onActivate, isActive, ...props }: CardProps) =>
 
         utterance.onerror = (event) => {
           console.error('❌ Speech error:', event.error);
-          resolve(); // Resolve anyway to continue the flow
+          resolve();
         };
         
         window.speechSynthesis.speak(utterance);
@@ -283,7 +279,6 @@ const AICard = ({ id, poweredBy, onActivate, isActive, ...props }: CardProps) =>
       console.log('🎤 Starting to listen...');
       setConnectionState('listening');
 
-      // Clear previous handlers
       recognitionRef.current.onresult = null;
       recognitionRef.current.onerror = null;
       recognitionRef.current.onend = null;
@@ -347,20 +342,16 @@ const AICard = ({ id, poweredBy, onActivate, isActive, ...props }: CardProps) =>
   const conversationLoop = async () => {
     while (isActiveRef.current) {
       try {
-        // Listen for user input
         const userMessage = await listen();
         
         if (!isActiveRef.current) break;
 
-        // Get AI response
         const aiResponse = await getAIResponse(userMessage);
         
         if (!isActiveRef.current) break;
 
-        // Speak AI response
         await speak(aiResponse);
         
-        // Small delay before next listen cycle
         await new Promise(resolve => setTimeout(resolve, 500));
         
       } catch (error) {
@@ -368,7 +359,6 @@ const AICard = ({ id, poweredBy, onActivate, isActive, ...props }: CardProps) =>
         
         if (!isActiveRef.current) break;
 
-        // Handle different error types
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         
         if (errorMessage.includes('no-speech') || errorMessage.includes('Empty transcript')) {
@@ -381,7 +371,6 @@ const AICard = ({ id, poweredBy, onActivate, isActive, ...props }: CardProps) =>
           await speak("Sorry, I encountered an error. Let's try again.");
         }
         
-        // Wait a bit before retrying
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
@@ -399,7 +388,6 @@ const AICard = ({ id, poweredBy, onActivate, isActive, ...props }: CardProps) =>
     isActiveRef.current = true;
 
     try {
-      // Request microphone permission
       await navigator.mediaDevices.getUserMedia({ audio: true });
       console.log('✅ Microphone permission granted');
     } catch (err) {
@@ -410,7 +398,6 @@ const AICard = ({ id, poweredBy, onActivate, isActive, ...props }: CardProps) =>
       return;
     }
 
-    // Initialize Gemini chat
     const model = genAiRef.current.getGenerativeModel({
       model: "gemini-1.5-flash",
       safetySettings: [
@@ -422,10 +409,8 @@ const AICard = ({ id, poweredBy, onActivate, isActive, ...props }: CardProps) =>
     
     setConnectionState('connected');
     
-    // Welcome message
     await speak("Hi! I'm the Gemini voice agent. What would you like to talk about?");
     
-    // Start the conversation loop
     if (isActiveRef.current) {
       conversationLoop();
     }
@@ -460,7 +445,7 @@ const AICard = ({ id, poweredBy, onActivate, isActive, ...props }: CardProps) =>
     return () => {
       cleanupVoice();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // The unused eslint-disable directive has been removed from here.
   }, []);
 
   const getButtonText = () => {
@@ -479,7 +464,7 @@ const AICard = ({ id, poweredBy, onActivate, isActive, ...props }: CardProps) =>
   return (
     <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto" onMouseEnter={() => !isMobile && props.onHover(id)} onMouseLeave={() => !isMobile && props.onHover(null)}>
       <div className="bg-white p-4 border-2 p-[60px] border-black shadow-[8px_8px_0px_#000000] flex flex-col justify-between gap-4 w-full">
-        <IconContainer {...props} isClicked={isActive} isHovered={id === props.hoveredId} isAnotherCardHovered={props.hoveredId !== null && id !== props.hoveredId} />
+        <IconContainer {...props} isHovered={id === props.hoveredId} isAnotherCardHovered={props.hoveredId !== null && id !== props.hoveredId} />
         <div className='text-center'>
           <p className="text-lg font-semibold text-gray-700">Powered By</p>
           <p className="font-bold text-black text-xl">{poweredBy}</p>
