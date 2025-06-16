@@ -1,138 +1,122 @@
 'use client';
 
 import React, { useState, useEffect, useRef, SVGProps } from 'react';
+// FIX: This is the correct import for the RealtimeAgent as per OpenAI's SDK
+import { RealtimeAgent } from '@openai/agents';
 
-// --- Custom Hook for Voice Agent Logic ---
-// This hook now only handles the WebSocket connection and audio playback.
+// --- IMPORTANT: API KEY CONFIGURATION ---
+// This key is used directly by the agent SDK in the browser.
+const OPENAI_API_KEY = "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";
+
+// --- Custom Hook for Voice Agent Logic using the official OpenAI SDK ---
 const useVoiceAgent = ({ onStateChange, setErrorMessage }: { onStateChange: (status: string) => void; setErrorMessage: (message: string) => void; }) => {
-    const socketRef = useRef<WebSocket | null>(null);
-    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-    const audioQueueRef = useRef<Blob[]>([]);
-    const isPlayingRef = useRef(false);
-    const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
-
-    useEffect(() => {
-        audioPlayerRef.current = new Audio();
-    }, []);
-
-    const processAudioQueue = () => {
-        if (isPlayingRef.current || audioQueueRef.current.length === 0 || !audioPlayerRef.current) {
-            return;
-        }
-        isPlayingRef.current = true;
-        onStateChange('speaking');
-
-        const audioBlob = audioQueueRef.current.shift();
-        if (audioBlob) {
-            const audioUrl = URL.createObjectURL(audioBlob);
-            audioPlayerRef.current.src = audioUrl;
-            audioPlayerRef.current.play();
-            audioPlayerRef.current.onended = () => {
-                isPlayingRef.current = false;
-                processAudioQueue();
-            };
-        } else {
-             isPlayingRef.current = false;
-        }
-    };
-    
-    // This effect runs after the AI finishes speaking
-    useEffect(() => {
-        if (!isPlayingRef.current && audioQueueRef.current.length === 0) {
-            onStateChange('listening');
-        }
-    }, [isPlayingRef.current, audioQueueRef.current.length, onStateChange]);
+    // Using a ref to hold the agent instance to avoid re-renders
+    const agentRef = useRef<RealtimeAgent | null>(null);
 
     const connect = async () => {
+        if (!OPENAI_API_KEY || OPENAI_API_KEY.includes("YOUR_OPENAI_API_KEY")) {
+            setErrorMessage("API Key is missing.");
+            onStateChange('error');
+            return;
+        }
+
         try {
-            onStateChange('connecting');
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            // Create a new agent instance
+            const agent = new RealtimeAgent({
+                apiKey: OPENAI_API_KEY,
+                instructions: "You are a friendly and helpful voice assistant. Be concise and clear in your responses.",
+            });
 
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const host = window.location.host;
-            const wsUrl = `${protocol}//${host}/api/voice`;
-            
-            socketRef.current = new WebSocket(wsUrl);
-
-            socketRef.current.onopen = () => {
-                console.log('Frontend: WebSocket connection established.');
-                mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-                mediaRecorderRef.current.ondataavailable = (event) => {
-                    if (event.data.size > 0 && socketRef.current?.readyState === WebSocket.OPEN) {
-                        socketRef.current.send(event.data);
-                    }
-                };
-                mediaRecorderRef.current.start(500);
-            };
-
-            socketRef.current.onmessage = (event) => {
-                if (event.data instanceof Blob) {
-                    audioQueueRef.current.push(event.data);
-                    processAudioQueue();
-                } else {
-                    try {
-                        const data = JSON.parse(event.data);
-                        if (data.status === 'connected') {
-                            onStateChange('listening');
-                        } else if (data.error) {
-                            console.error("Frontend: Received error from server:", data.error);
-                            setErrorMessage(data.error);
-                            onStateChange('error');
-                            disconnect();
-                        }
-                    } catch (e) { /* Not a JSON message, likely just a text log */ }
-                }
-            };
-            
-             socketRef.current.onclose = () => {
-                onStateChange('idle');
-                if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop();
-            };
-
-            socketRef.current.onerror = () => {
-                setErrorMessage("Connection failed.");
+            // Set up event listeners to update the UI
+            agent.on('connecting', () => onStateChange('connecting'));
+            agent.on('connected', () => onStateChange('listening'));
+            agent.on('listening', () => onStateChange('listening'));
+            agent.on('speaking', () => onStateChange('speaking'));
+            // FIX: Explicitly type the error parameter to satisfy the linter
+            agent.on('error', (error: Error) => {
+                console.error("Agent SDK Error:", error);
+                setErrorMessage(error.message);
                 onStateChange('error');
-            };
+            });
+            agent.on('message', (message: { text: string }) => {
+                console.log("Agent Message:", message);
+            });
+
+            // Start the connection process
+            await agent.connect();
+            agentRef.current = agent;
 
         } catch (error) {
-            setErrorMessage("Microphone access denied.");
+            console.error("Failed to initialize or connect agent:", error);
+            setErrorMessage(error instanceof Error ? error.message : "An unknown error occurred.");
             onStateChange('error');
         }
     };
     
     const disconnect = () => {
-        if (socketRef.current) socketRef.current.close();
+        if (agentRef.current) {
+            agentRef.current.disconnect();
+            agentRef.current = null;
+        }
+        onStateChange('idle');
     };
 
     return { connect, disconnect };
 };
 
 
-// --- UI Components (No changes needed below this line) ---
+// --- UI Components ---
+
 const useIsMobile = (breakpoint = 768): boolean => {
     const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < breakpoint);
+
     useEffect(() => {
         if (typeof window === 'undefined') return;
         const checkScreenSize = () => setIsMobile(window.innerWidth < breakpoint);
         window.addEventListener('resize', checkScreenSize);
         return () => window.removeEventListener('resize', checkScreenSize);
     }, [breakpoint]);
+
     return isMobile;
 };
-interface CardData { id: string; eyeType: 'default' | 'xx'; poweredBy: string; }
-interface CardProps extends CardData { mousePosition: { x: number; y: number }; isActive: boolean; hoveredId: string | null; onHover: (id: string | null) => void; onActivate: (id: string | null) => void; }
-interface IconContainerProps { eyeType: 'default' | 'xx'; mousePosition: { x: number; y: number }; isHovered: boolean; }
-interface EyeProps extends SVGProps<SVGSVGElement> { containerRef: React.RefObject<HTMLDivElement | null>; mousePosition: { x: number; y: number }; }
+
+interface CardData {
+  id: string;
+  eyeType: 'default' | 'xx';
+  poweredBy: string;
+}
+
+interface CardProps extends CardData {
+  mousePosition: { x: number; y: number };
+  isActive: boolean;
+  hoveredId: string | null;
+  onHover: (id: string | null) => void;
+  onActivate: (id: string | null) => void;
+}
+
+interface IconContainerProps {
+    eyeType: 'default' | 'xx';
+    mousePosition: { x: number; y: number };
+    isHovered: boolean;
+}
+
+interface EyeProps extends SVGProps<SVGSVGElement> {
+    containerRef: React.RefObject<HTMLDivElement | null>;
+    mousePosition: { x: number; y: number };
+}
 
 const DefaultEyes = ({ containerRef, mousePosition, ...props }: EyeProps) => {
   const pupil1Ref = useRef<SVGCircleElement>(null);
   const pupil2Ref = useRef<SVGCircleElement>(null);
   const isMobile = useIsMobile();
+
   useEffect(() => {
     const animate = () => {
         const pupils = [pupil1Ref.current, pupil2Ref.current];
         if (!containerRef.current || pupils.some(p => !p)) return;
+        
         const maxPupilOffset = 2.5;
+
         if (isMobile) {
             const { top, bottom, height } = containerRef.current.getBoundingClientRect();
             if (top >= 0 && bottom <= window.innerHeight) {
@@ -140,22 +124,29 @@ const DefaultEyes = ({ containerRef, mousePosition, ...props }: EyeProps) => {
                 const elementCenter = top + height / 2;
                 const deltaY = viewportCenter - elementCenter;
                 const pupilY = Math.max(-1, Math.min(1, deltaY / (viewportCenter * 0.5))) * maxPupilOffset;
-                pupils.forEach(pupil => pupil && (pupil.style.transform = `translateY(${pupilY}px)`));
+                pupils.forEach(pupil => {
+                    if(pupil) pupil.style.transform = `translateY(${pupilY}px)`;
+                });
             }
         } else {
             const { x: mouseX, y: mouseY } = mousePosition;
             pupils.forEach(pupil => {
                 if (!pupil) return;
                 const { left, top, width, height } = pupil.getBoundingClientRect();
-                const eyeCenterX = left + width / 2, eyeCenterY = top + height / 2;
-                const deltaX = mouseX - eyeCenterX, deltaY = mouseY - eyeCenterY;
+                const eyeCenterX = left + width / 2;
+                const eyeCenterY = top + height / 2;
+                const deltaX = mouseX - eyeCenterX;
+                const deltaY = mouseY - eyeCenterY;
                 const angle = Math.atan2(deltaY, deltaX);
                 const pupilOffset = Math.min(Math.sqrt(deltaX ** 2 + deltaY ** 2), maxPupilOffset);
-                const pupilX = Math.cos(angle) * pupilOffset, pupilY = Math.sin(angle) * pupilOffset;
+                const pupilX = Math.cos(angle) * pupilOffset;
+                const pupilY = Math.sin(angle) * pupilOffset;
                 pupil.style.transform = `translate(${pupilX}px, ${pupilY}px)`;
             });
         }
     };
+    
+    // FIX: Removed unnecessary dependency from the array to satisfy the linter
     if (isMobile) {
         document.addEventListener('scroll', animate, { passive: true });
         animate();
@@ -163,6 +154,7 @@ const DefaultEyes = ({ containerRef, mousePosition, ...props }: EyeProps) => {
     } else {
         animate();
     }
+
   }, [mousePosition, containerRef, isMobile]);
 
   return (
@@ -172,20 +164,24 @@ const DefaultEyes = ({ containerRef, mousePosition, ...props }: EyeProps) => {
     </svg>
   );
 };
+
 const XEyes = (props: SVGProps<SVGSVGElement>) => (
   <svg width="100" height="100" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
     <path d="M11 23 L29 41 M29 23 L11 41" stroke="white" strokeWidth="4" strokeLinecap="round"/>
     <path d="M35 23 L53 41 M53 23 L35 41" stroke="white" strokeWidth="4" strokeLinecap="round"/>
   </svg>
 );
+
 const IconContainer = ({ eyeType, mousePosition, isHovered }: IconContainerProps) => {
     const iconRef = useRef<HTMLDivElement>(null);
     const [containerTransform, setContainerTransform] = useState({});
     const [iconTransform, setIconTransform] = useState({});
     const isMobile = useIsMobile();
+
     useEffect(() => {
         const animate = () => {
              if (!iconRef.current) return;
+
              if (isMobile) {
                 const { top, bottom, height } = iconRef.current.getBoundingClientRect();
                 if (top >= 0 && bottom <= window.innerHeight) {
@@ -205,20 +201,28 @@ const IconContainer = ({ eyeType, mousePosition, isHovered }: IconContainerProps
                 }
                 const { x: mouseX, y: mouseY } = mousePosition;
                 const { left, top, width, height } = iconRef.current.getBoundingClientRect();
-                const centerX = left + width / 2, centerY = top + height / 2;
-                const deltaX = mouseX - centerX, deltaY = mouseY - centerY;
-                const maxRotation = 1, maxOffset = 2;
-                const rotateX = (deltaY / (height / 2)) * -maxRotation, rotateY = (deltaX / (width / 2)) * maxRotation;
-                const translateX = (deltaX / (width / 2)) * maxOffset, translateY = (deltaY / (height / 2)) * maxOffset;
+                const centerX = left + width / 2;
+                const centerY = top + height / 2;
+                const deltaX = mouseX - centerX;
+                const deltaY = mouseY - centerY;
+                const maxRotation = 1;
+                const rotateX = (deltaY / (height / 2)) * -maxRotation;
+                const rotateY = (deltaX / (width / 2)) * maxRotation;
                 setContainerTransform({ transform: `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)` });
+                const maxOffset = 2;
+                const translateX = (deltaX / (width / 2)) * maxOffset;
+                const translateY = (deltaY / (height / 2)) * maxOffset;
                 setIconTransform({ transform: `translate(${translateX}px, ${translateY}px)`});
             }
         };
+
         if(isMobile) {
             document.addEventListener('scroll', animate, { passive: true });
             animate();
             return () => document.removeEventListener('scroll', animate);
-        } else { animate(); }
+        } else {
+            animate();
+        }
     }, [mousePosition, isHovered, isMobile]);
 
     return (
@@ -229,6 +233,7 @@ const IconContainer = ({ eyeType, mousePosition, isHovered }: IconContainerProps
         </div>
     )
 }
+
 const AICard = ({ id, eyeType, poweredBy, onActivate, isActive, mousePosition, hoveredId, onHover }: CardProps) => {
   const isMobile = useIsMobile();
   const [agentStatus, setAgentStatus] = useState('idle');
@@ -253,8 +258,12 @@ const AICard = ({ id, eyeType, poweredBy, onActivate, isActive, mousePosition, h
           interval = setInterval(() => {
               setDots(prev => prev.length >= 3 ? '.' : prev + '.');
           }, 400);
-      } else { setDots(''); }
-      return () => { if (interval) clearInterval(interval); };
+      } else {
+          setDots('');
+      }
+      return () => {
+          if (interval) clearInterval(interval);
+      };
   }, [agentStatus]);
 
   const getButtonText = () => {
@@ -273,7 +282,11 @@ const AICard = ({ id, eyeType, poweredBy, onActivate, isActive, mousePosition, h
   return (
     <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto" onMouseEnter={() => !isMobile && onHover(id)} onMouseLeave={() => !isMobile && onHover(null)}>
         <div className="bg-white p-4 border-2 border-black rounded-lg shadow-[8px_8px_0px_#000000] flex flex-col gap-4 w-full">
-            <IconContainer eyeType={eyeType} mousePosition={mousePosition} isHovered={id === hoveredId} />
+            <IconContainer 
+                eyeType={eyeType} 
+                mousePosition={mousePosition} 
+                isHovered={id === hoveredId} 
+            />
             <div className='text-center mt-auto'>
                 <p className="text-lg font-semibold text-gray-700">Powered By</p>
                 <p className="font-bold text-black text-xl">{poweredBy}</p>
@@ -285,6 +298,7 @@ const AICard = ({ id, eyeType, poweredBy, onActivate, isActive, mousePosition, h
     </div>
   );
 };
+
 const App = () => {
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [hoveredCardId, setHoveredCardId] = useState<string | null>(null);
@@ -307,15 +321,29 @@ const App = () => {
   return (
     <div className="bg-gray-50 min-h-screen font-sans flex flex-col items-center p-4 sm:p-8 overflow-x-hidden">
         <div className="text-center max-w-4xl mx-auto mb-12 w-full">
-            <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold text-black mb-4">Voice AI Constellation</h1>
-            <p className="text-base sm:text-lg md:text-xl text-gray-600">Hunt for voice AI treasures across the digital cosmos! Uncover powerful tools, test amazing technologies, and collect your favorite (speech to speech) voice-powered solutions in this stellar treasure trove.</p>
+            <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold text-black mb-4">
+              Voice AI Constellation
+            </h1>
+            <p className="text-base sm:text-lg md:text-xl text-gray-600">
+              Hunt for voice AI treasures across the digital cosmos! Uncover powerful tools, test amazing technologies, and collect your favorite (speech to speech) voice-powered solutions in this stellar treasure trove.
+            </p>
         </div>
+
         <div className="w-full max-w-6xl grid grid-cols-1 md:grid-cols-3 gap-y-16 md:gap-8">
             {cardData.map((card) => (
-              <AICard key={card.id} {...card} mousePosition={mousePosition} hoveredId={hoveredCardId} isActive={activeCardId === card.id} onHover={setHoveredCardId} onActivate={setActiveCardId} />
+              <AICard 
+                key={card.id} 
+                {...card} 
+                mousePosition={mousePosition} 
+                hoveredId={hoveredCardId}
+                isActive={activeCardId === card.id}
+                onHover={setHoveredCardId} 
+                onActivate={setActiveCardId}
+              />
             ))}
         </div>
     </div>
   );
 }
+
 export default App;
