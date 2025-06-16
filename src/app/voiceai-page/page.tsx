@@ -44,7 +44,7 @@ const useVoiceAgent = ({ provider, onStateChange, setErrorMessage }: { provider:
     };
 
     const connect = async () => {
-        if (!OPENAI_API_KEY || OPENAI_API_KEY === "YOUR_OPENAI_API_KEY_HERE") {
+        if (!OPENAI_API_KEY) {
             setErrorMessage("API Key is missing.");
             onStateChange('error');
             return;
