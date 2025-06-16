@@ -1,71 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, SVGProps } from 'react';
-// FIX: This is the correct import for the RealtimeAgent as per OpenAI's SDK
-import { RealtimeAgent } from '@openai/agents';
-
-// --- IMPORTANT: API KEY CONFIGURATION ---
-// This key is used directly by the agent SDK in the browser.
-const OPENAI_API_KEY = "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";
-
-// --- Custom Hook for Voice Agent Logic using the official OpenAI SDK ---
-const useVoiceAgent = ({ onStateChange, setErrorMessage }: { onStateChange: (status: string) => void; setErrorMessage: (message: string) => void; }) => {
-    // Using a ref to hold the agent instance to avoid re-renders
-    const agentRef = useRef<RealtimeAgent | null>(null);
-
-    const connect = async () => {
-        if (!OPENAI_API_KEY || OPENAI_API_KEY.includes("YOUR_OPENAI_API_KEY")) {
-            setErrorMessage("API Key is missing.");
-            onStateChange('error');
-            return;
-        }
-
-        try {
-            // Create a new agent instance
-            const agent = new RealtimeAgent({
-                apiKey: OPENAI_API_KEY,
-                instructions: "You are a friendly and helpful voice assistant. Be concise and clear in your responses.",
-            });
-
-            // Set up event listeners to update the UI
-            agent.on('connecting', () => onStateChange('connecting'));
-            agent.on('connected', () => onStateChange('listening'));
-            agent.on('listening', () => onStateChange('listening'));
-            agent.on('speaking', () => onStateChange('speaking'));
-            // FIX: Explicitly type the error parameter to satisfy the linter
-            agent.on('error', (error: Error) => {
-                console.error("Agent SDK Error:", error);
-                setErrorMessage(error.message);
-                onStateChange('error');
-            });
-            agent.on('message', (message: { text: string }) => {
-                console.log("Agent Message:", message);
-            });
-
-            // Start the connection process
-            await agent.connect();
-            agentRef.current = agent;
-
-        } catch (error) {
-            console.error("Failed to initialize or connect agent:", error);
-            setErrorMessage(error instanceof Error ? error.message : "An unknown error occurred.");
-            onStateChange('error');
-        }
-    };
-    
-    const disconnect = () => {
-        if (agentRef.current) {
-            agentRef.current.disconnect();
-            agentRef.current = null;
-        }
-        onStateChange('idle');
-    };
-
-    return { connect, disconnect };
-};
-
-
-// --- UI Components ---
+import React, { useState, useEffect, useRef, SVGProps} from 'react';
 
 const useIsMobile = (breakpoint = 768): boolean => {
     const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < breakpoint);
@@ -89,6 +24,7 @@ interface CardData {
 interface CardProps extends CardData {
   mousePosition: { x: number; y: number };
   isActive: boolean;
+  isOtherActive: boolean;
   hoveredId: string | null;
   onHover: (id: string | null) => void;
   onActivate: (id: string | null) => void;
@@ -98,12 +34,15 @@ interface IconContainerProps {
     eyeType: 'default' | 'xx';
     mousePosition: { x: number; y: number };
     isHovered: boolean;
+    isAnotherCardHovered: boolean;
+    isClicked: boolean;
 }
 
 interface EyeProps extends SVGProps<SVGSVGElement> {
     containerRef: React.RefObject<HTMLDivElement | null>;
     mousePosition: { x: number; y: number };
 }
+
 
 const DefaultEyes = ({ containerRef, mousePosition, ...props }: EyeProps) => {
   const pupil1Ref = useRef<SVGCircleElement>(null);
@@ -146,7 +85,6 @@ const DefaultEyes = ({ containerRef, mousePosition, ...props }: EyeProps) => {
         }
     };
     
-    // FIX: Removed unnecessary dependency from the array to satisfy the linter
     if (isMobile) {
         document.addEventListener('scroll', animate, { passive: true });
         animate();
@@ -172,7 +110,8 @@ const XEyes = (props: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-const IconContainer = ({ eyeType, mousePosition, isHovered }: IconContainerProps) => {
+// --- Icon Container with Animation ---
+const IconContainer = ({ eyeType, mousePosition, isHovered, isAnotherCardHovered }: IconContainerProps) => {
     const iconRef = useRef<HTMLDivElement>(null);
     const [containerTransform, setContainerTransform] = useState({});
     const [iconTransform, setIconTransform] = useState({});
@@ -223,10 +162,10 @@ const IconContainer = ({ eyeType, mousePosition, isHovered }: IconContainerProps
         } else {
             animate();
         }
-    }, [mousePosition, isHovered, isMobile]);
+    }, [mousePosition, isHovered, isAnotherCardHovered, isMobile]);
 
     return (
-        <div ref={iconRef} className="bg-black rounded-2xl w-full aspect-square flex items-center justify-center overflow-hidden transition-transform duration-100" style={containerTransform}>
+        <div ref={iconRef} className="bg-black rounded-3xl w-full aspect-square flex items-center justify-center overflow-hidden transition-transform duration-100" style={containerTransform}>
             <div className="transition-transform duration-100" style={iconTransform}>
                 {eyeType === 'xx' ? <XEyes className="w-36 h-36 sm:w-40 sm:h-40" /> : <DefaultEyes containerRef={iconRef} mousePosition={mousePosition} className="w-36 h-36 sm:w-40 sm:h-40" />}
             </div>
@@ -234,27 +173,27 @@ const IconContainer = ({ eyeType, mousePosition, isHovered }: IconContainerProps
     )
 }
 
-const AICard = ({ id, eyeType, poweredBy, onActivate, isActive, mousePosition, hoveredId, onHover }: CardProps) => {
+// --- Card Component ---
+const AICard = ({ id, poweredBy, onActivate, isActive, ...props }: CardProps) => {
   const isMobile = useIsMobile();
-  const [agentStatus, setAgentStatus] = useState('idle');
-  const [errorMessage, setErrorMessage] = useState("");
-  const { connect, disconnect } = useVoiceAgent({ onStateChange: setAgentStatus, setErrorMessage });
+  const [connectionState, setConnectionState] = useState('idle');
   const [dots, setDots] = useState('');
 
-  const handleToggleConnection = () => {
-      if (isActive) {
-          disconnect();
-          onActivate(null);
-      } else {
-          setErrorMessage(""); 
-          connect();
-          onActivate(id);
-      }
-  };
+  useEffect(() => {
+    if (isActive) {
+      setConnectionState('connecting');
+      const timer = setTimeout(() => {
+        setConnectionState('connected');
+      }, 2000);
+      return () => clearTimeout(timer);
+    } else {
+      setConnectionState('idle');
+    }
+  }, [isActive]);
 
   useEffect(() => {
       let interval: NodeJS.Timeout | null = null;
-      if (agentStatus === 'connecting') {
+      if (connectionState === 'connecting') {
           interval = setInterval(() => {
               setDots(prev => prev.length >= 3 ? '.' : prev + '.');
           }, 400);
@@ -264,40 +203,37 @@ const AICard = ({ id, eyeType, poweredBy, onActivate, isActive, mousePosition, h
       return () => {
           if (interval) clearInterval(interval);
       };
-  }, [agentStatus]);
+  }, [connectionState]);
 
   const getButtonText = () => {
-      if (!isActive) return 'CLICK ME';
-      switch (agentStatus) {
-          case 'connecting': return `Starting voice agent${dots}`;
-          case 'speaking': return 'Speaking...';
-          case 'listening': return 'Listening...';
-          case 'error': return `Error: ${errorMessage || 'Failed'}`;
-          default: return 'Click to stop';
+      switch (connectionState) {
+          case 'connecting':
+              return `Starting voice agent${dots}`;
+          case 'connected':
+              return 'Click to stop';
+          default:
+              return 'CLICK ME';
       }
   };
   
-  const buttonTextColor = !isActive ? 'text-black' : 'text-gray-600';
+  const buttonTextColor = connectionState === 'idle' ? 'text-black' : 'text-gray-600';
 
   return (
-    <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto" onMouseEnter={() => !isMobile && onHover(id)} onMouseLeave={() => !isMobile && onHover(null)}>
-        <div className="bg-white p-4 border-2 border-black rounded-lg shadow-[8px_8px_0px_#000000] flex flex-col gap-4 w-full">
-            <IconContainer 
-                eyeType={eyeType} 
-                mousePosition={mousePosition} 
-                isHovered={id === hoveredId} 
-            />
-            <div className='text-center mt-auto'>
+    <div className="flex flex-col items-center gap-4 w-full max-w-sm mx-auto" onMouseEnter={() => !isMobile && props.onHover(id)} onMouseLeave={() => !isMobile && props.onHover(null)}>
+        <div className="bg-white p-4 border-2 p-[60px] border-black shadow-[8px_8px_0px_#000000] flex flex-col justify-between gap-4 w-full">
+            <IconContainer {...props} isClicked={isActive} isHovered={id === props.hoveredId} isAnotherCardHovered={props.hoveredId !== null && id !== props.hoveredId}/>
+            <div className='text-center'>
                 <p className="text-lg font-semibold text-gray-700">Powered By</p>
                 <p className="font-bold text-black text-xl">{poweredBy}</p>
             </div>
         </div>
-        <button onClick={handleToggleConnection} className="w-full bg-white border-2 border-black py-3 px-6 text-lg font-bold transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black shadow-[8px_8px_0px_#000000]">
+        <button onClick={() => onActivate(isActive ? null : id)} className="w-full bg-white border-2 border-black py-3 px-6 text-lg font-bold transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black shadow-[8px_8px_0px_#000000]">
             <span className={`inline-block ${buttonTextColor}`}>{getButtonText()}</span>
         </button>
     </div>
   );
 };
+
 
 const App = () => {
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
@@ -313,6 +249,7 @@ const App = () => {
   
   useEffect(() => {
     if (isMobile) return; 
+
     const handleMouseMove = (event: MouseEvent) => setMousePosition({ x: event.clientX, y: event.clientY });
     window.addEventListener('mousemove', handleMouseMove);
     return () => window.removeEventListener('mousemove', handleMouseMove);
@@ -337,6 +274,7 @@ const App = () => {
                 mousePosition={mousePosition} 
                 hoveredId={hoveredCardId}
                 isActive={activeCardId === card.id}
+                isOtherActive={activeCardId !== null && activeCardId !== card.id}
                 onHover={setHoveredCardId} 
                 onActivate={setActiveCardId}
               />
@@ -346,4 +284,6 @@ const App = () => {
   );
 }
 
-export default App;
+export default function ProvidedApp() {
+    return <App />;
+}
