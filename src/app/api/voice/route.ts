@@ -72,12 +72,12 @@ export async function GET(request: Request) {
         return new Response("Missing OPENAI_API_KEY environment variable.", { status: 500 });
     }
     
-    // @ts-ignore: Deno is a global available in the Vercel Edge Runtime.
+    // @ts-expect-error: Deno is a global available in the Vercel Edge Runtime.
     if (!Deno.upgradeWebSocket) {
         return new Response("WebSocket upgrades are not supported in this environment.", { status: 501 });
     }
 
-    // @ts-ignore: Deno is a global available in the Vercel Edge Runtime.
+    // @ts-expect-error: Deno is a global available in the Vercel Edge Runtime.
     const { socket, response } = Deno.upgradeWebSocket(request);
 
     let openai: OpenAI;
