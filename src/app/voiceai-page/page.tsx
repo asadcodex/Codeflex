@@ -1,8 +1,141 @@
 'use client';
 
 import React, { useState, useEffect, useRef, SVGProps } from 'react';
+// FIX: Using the standard OpenAI library for a client-side approach
+import { OpenAI } from 'openai';
 
-// --- Custom Hook for Screen Size ---
+// --- IMPORTANT: API KEY CONFIGURATION ---
+const OPENAI_API_KEY = "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";
+
+// --- Custom Hook for Client-Side Voice Agent Logic ---
+const useVoiceAgent = ({ onStateChange, setErrorMessage }: { onStateChange: (status: string) => void; setErrorMessage: (message: string) => void; }) => {
+    const openaiRef = useRef<OpenAI | null>(null);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const audioQueueRef = useRef<Blob[]>([]);
+    const isPlayingRef = useRef(false);
+    const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+
+    useEffect(() => {
+        // Initialize the Audio object safely on the client
+        audioPlayerRef.current = new Audio();
+    }, []);
+
+    const processAudioQueue = () => {
+        if (isPlayingRef.current || audioQueueRef.current.length === 0 || !audioPlayerRef.current) {
+            return;
+        }
+        isPlayingRef.current = true;
+        onStateChange('speaking');
+
+        const audioBlob = audioQueueRef.current.shift();
+        if (audioBlob) {
+            const audioUrl = URL.createObjectURL(audioBlob);
+            audioPlayerRef.current.src = audioUrl;
+            audioPlayerRef.current.play();
+            audioPlayerRef.current.onended = () => {
+                isPlayingRef.current = false;
+                onStateChange('listening'); // Go back to listening after speaking
+                processAudioQueue();
+            };
+        } else {
+            isPlayingRef.current = false;
+        }
+    };
+
+    const connect = async () => {
+        if (!OPENAI_API_KEY || OPENAI_API_KEY.includes("YOUR_OPENAI_API_KEY")) {
+            setErrorMessage("API Key is missing.");
+            onStateChange('error');
+            return;
+        }
+
+        onStateChange('connecting');
+
+        try {
+            // Initialize OpenAI client
+            openaiRef.current = new OpenAI({
+                apiKey: OPENAI_API_KEY,
+                dangerouslyAllowBrowser: true, // Required for client-side usage
+            });
+
+            // Get microphone permissions
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+            // Generate and play welcome message
+            const welcomeMessage = "Hello! I am a voice assistant. How can I assist you today?";
+            const speechResponse = await openaiRef.current.audio.speech.create({
+                model: "tts-1",
+                voice: "alloy",
+                input: welcomeMessage,
+            });
+            const audioBlob = await speechResponse.blob();
+            audioQueueRef.current.push(audioBlob);
+            processAudioQueue();
+
+            // Setup MediaRecorder to listen for user input
+            mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+            mediaRecorderRef.current.start(1000); // Send audio chunks every second
+
+            mediaRecorderRef.current.ondataavailable = async (event) => {
+                if (event.data.size > 0 && !isPlayingRef.current) {
+                    await handleUserAudio(event.data);
+                }
+            };
+        } catch (error) {
+            console.error("Connection failed:", error);
+            setErrorMessage(error instanceof Error ? error.message : "An unknown error occurred.");
+            onStateChange('error');
+        }
+    };
+
+    const handleUserAudio = async (audioBlob: Blob) => {
+        if (!openaiRef.current) return;
+        try {
+            onStateChange('thinking'); // New state for processing
+            const file = new File([audioBlob], "input.webm", { type: "audio/webm" });
+            
+            const transcription = await openaiRef.current.audio.transcriptions.create({ file, model: "whisper-1" });
+            if (!transcription.text?.trim()) return;
+
+            const chatCompletion = await openaiRef.current.chat.completions.create({
+                messages: [{ role: "user", content: transcription.text }],
+                model: "gpt-4",
+            });
+
+            const gptResponse = chatCompletion.choices[0].message.content;
+            if (gptResponse) {
+                const speechResponse = await openaiRef.current.audio.speech.create({
+                    model: "tts-1", voice: "nova", input: gptResponse,
+                });
+                const responseBlob = await speechResponse.blob();
+                audioQueueRef.current.push(responseBlob);
+                processAudioQueue();
+            }
+        } catch (error) {
+            console.error("Error processing user audio:", error);
+            setErrorMessage("I had trouble understanding that.");
+            onStateChange('listening'); // Go back to listening on error
+        }
+    };
+    
+    const disconnect = () => {
+        if (mediaRecorderRef.current?.state === 'recording') {
+            mediaRecorderRef.current.stop();
+        }
+        audioQueueRef.current = [];
+        if (audioPlayerRef.current) {
+            audioPlayerRef.current.pause();
+            audioPlayerRef.current.src = "";
+        }
+        onStateChange('idle');
+    };
+
+    return { connect, disconnect };
+};
+
+
+// --- UI Components (No changes needed below this line) ---
+
 const useIsMobile = (breakpoint = 768): boolean => {
     const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < breakpoint);
 
@@ -16,124 +149,6 @@ const useIsMobile = (breakpoint = 768): boolean => {
     return isMobile;
 };
 
-// --- Custom Hook for Voice Agent Logic ---
-const useVoiceAgent = ({ onStateChange, setErrorMessage }: { onStateChange: (status: string) => void; setErrorMessage: (message: string) => void; }) => {
-    const socketRef = useRef<WebSocket | null>(null);
-    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-    const audioQueueRef = useRef<Blob[]>([]);
-    const isPlayingRef = useRef(false);
-    const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
-
-    useEffect(() => {
-        audioPlayerRef.current = new Audio();
-    }, []);
-
-    const processAudioQueue = () => {
-        if (isPlayingRef.current || audioQueueRef.current.length === 0 || !audioPlayerRef.current) {
-            return;
-        }
-        isPlayingRef.current = true;
-        onStateChange('speaking');
-
-        const audioBlob = audioQueueRef.current.shift();
-        
-        if (audioBlob) {
-            const audioUrl = URL.createObjectURL(audioBlob);
-            audioPlayerRef.current.src = audioUrl;
-            audioPlayerRef.current.play();
-            audioPlayerRef.current.onended = () => {
-                isPlayingRef.current = false;
-                processAudioQueue();
-            };
-        } else {
-             isPlayingRef.current = false;
-        }
-    };
-
-    const connect = async () => {
-        try {
-            onStateChange('connecting');
-
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const host = window.location.host;
-            const wsUrl = `${protocol}//${host}/api/voice`;
-            
-            socketRef.current = new WebSocket(wsUrl);
-
-            socketRef.current.onopen = () => {
-                console.log('Frontend: WebSocket connection established.');
-                mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-                mediaRecorderRef.current.ondataavailable = (event) => {
-                    if (event.data.size > 0 && socketRef.current?.readyState === WebSocket.OPEN) {
-                        socketRef.current.send(event.data);
-                    }
-                };
-                mediaRecorderRef.current.start(500);
-            };
-
-            socketRef.current.onmessage = (event) => {
-                if (event.data instanceof Blob) {
-                    audioQueueRef.current.push(event.data);
-                    processAudioQueue();
-                } else {
-                    try {
-                        const data = JSON.parse(event.data);
-                        if (data.status === 'connected') {
-                            onStateChange('listening');
-                            console.log('Frontend: Voice agent is ready.');
-                        } else if (data.error) {
-                            console.error("Frontend: Error from server:", data.error);
-                            setErrorMessage(data.error);
-                            onStateChange('error');
-                            disconnect();
-                        }
-                    } catch (e) {
-                         console.log("Received non-JSON message:", event.data)
-                    }
-                }
-            };
-            
-             socketRef.current.onclose = () => {
-                console.log('WebSocket disconnected');
-                onStateChange('idle');
-                if (mediaRecorderRef.current?.state === 'recording') {
-                    mediaRecorderRef.current.stop();
-                }
-            };
-
-            socketRef.current.onerror = (error) => {
-                console.error('Frontend: WebSocket error:', error);
-                setErrorMessage("Connection failed.");
-                onStateChange('error');
-            };
-
-        } catch (error) {
-            console.error('Failed to get microphone access:', error);
-            setErrorMessage("Microphone access denied.");
-            onStateChange('error');
-        }
-    };
-    
-    const disconnect = () => {
-        if (socketRef.current) {
-            socketRef.current.close();
-        }
-    };
-
-    useEffect(() => {
-        if (audioQueueRef.current.length === 0 && !isPlayingRef.current) {
-             onStateChange('listening');
-        }
-    }, [isPlayingRef.current, onStateChange]);
-
-
-    return { connect, disconnect };
-};
-
-
-// --- UI Components ---
 interface CardData {
   id: string;
   eyeType: 'default' | 'xx';
@@ -325,6 +340,7 @@ const AICard = ({ id, eyeType, poweredBy, onActivate, isActive, mousePosition, h
           case 'connecting': return `Starting voice agent${dots}`;
           case 'speaking': return 'Speaking...';
           case 'listening': return 'Listening...';
+          case 'thinking': return 'Thinking...';
           case 'error': return `Error: ${errorMessage || 'Failed'}`;
           default: return 'Click to stop';
       }
