@@ -6,7 +6,7 @@ import { OpenAI } from 'openai';
 // --- IMPORTANT: API KEY CONFIGURATION ---
 // For this client-side demo to work, you must add your OpenAI API key below.
 // NOTE: This is for testing purposes only. Do NOT commit this key to a public repository.
-const OPENAI_API_KEY = "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";
+const OPENAI_API_KEY = "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";
 
 // --- Custom Hook for Voice Agent Logic ---
 const useVoiceAgent = ({ provider, onStateChange, setErrorMessage }: { provider: string; onStateChange: (status: string) => void; setErrorMessage: (message: string) => void; }) => {
