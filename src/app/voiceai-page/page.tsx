@@ -104,7 +104,8 @@ const useVoiceAgent = ({ onStateChange, setErrorMessage }: { onStateChange: (sta
                             onStateChange('error');
                             disconnect();
                         }
-                    } catch (e) {
+                    } catch {
+                        // Fixed: Removed unused variable 'e'
                         console.log("Received non-JSON message:", event.data)
                     }
                 }
