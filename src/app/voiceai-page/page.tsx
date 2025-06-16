@@ -1,17 +1,24 @@
 'use client';
 
 import React, { useState, useEffect, useRef, SVGProps } from 'react';
-import { OpenAI } from 'openai';
 
-// --- IMPORTANT: API KEY CONFIGURATION ---
-// For this client-side demo to work, you must add your OpenAI API key below.
-// NOTE: This is for testing purposes only. Do NOT commit this key to a public repository.
-const OPENAI_API_KEY = "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";
+// --- Custom Hook for Screen Size ---
+const useIsMobile = (breakpoint = 768): boolean => {
+    const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < breakpoint);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const checkScreenSize = () => setIsMobile(window.innerWidth < breakpoint);
+        window.addEventListener('resize', checkScreenSize);
+        return () => window.removeEventListener('resize', checkScreenSize);
+    }, [breakpoint]);
+
+    return isMobile;
+};
 
 // --- Custom Hook for Voice Agent Logic ---
-const useVoiceAgent = ({ provider, onStateChange, setErrorMessage }: { provider: string; onStateChange: (status: string) => void; setErrorMessage: (message: string) => void; }) => {
-    const [status, setStatus] = useState('idle');
-    const openaiRef = useRef<OpenAI | null>(null);
+const useVoiceAgent = ({ onStateChange, setErrorMessage }: { onStateChange: (status: string) => void; setErrorMessage: (message: string) => void; }) => {
+    const socketRef = useRef<WebSocket | null>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioQueueRef = useRef<Blob[]>([]);
     const isPlayingRef = useRef(false);
@@ -26,10 +33,10 @@ const useVoiceAgent = ({ provider, onStateChange, setErrorMessage }: { provider:
             return;
         }
         isPlayingRef.current = true;
-        setStatus('speaking');
         onStateChange('speaking');
 
         const audioBlob = audioQueueRef.current.shift();
+        
         if (audioBlob) {
             const audioUrl = URL.createObjectURL(audioBlob);
             audioPlayerRef.current.src = audioUrl;
@@ -39,132 +46,94 @@ const useVoiceAgent = ({ provider, onStateChange, setErrorMessage }: { provider:
                 processAudioQueue();
             };
         } else {
-            isPlayingRef.current = false;
+             isPlayingRef.current = false;
         }
     };
 
     const connect = async () => {
-        if (!OPENAI_API_KEY) {
-            setErrorMessage("API Key is missing.");
-            onStateChange('error');
-            return;
-        }
-
-        setStatus('connecting');
-        onStateChange('connecting');
-
         try {
-            // Initialize OpenAI client on connect
-            openaiRef.current = new OpenAI({
-                apiKey: OPENAI_API_KEY,
-                dangerouslyAllowBrowser: true, // Required for client-side usage
-            });
+            onStateChange('connecting');
 
-            // Get microphone permissions
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-            // Send welcome message
-            const welcomeMessage = `Hello! I'm a voice agent powered by ${provider}. How can I help you?`;
-            const speechResponse = await openaiRef.current.audio.speech.create({
-                model: "tts-1",
-                voice: "alloy",
-                input: welcomeMessage,
-                response_format: "mp3",
-            });
-            const audioBlob = await speechResponse.blob();
-            audioQueueRef.current.push(audioBlob);
-            processAudioQueue();
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const host = window.location.host;
+            const wsUrl = `${protocol}//${host}/api/voice`;
             
-            setStatus('listening');
-            onStateChange('listening');
-            
-            // Setup MediaRecorder
-            mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-            mediaRecorderRef.current.start(500);
+            socketRef.current = new WebSocket(wsUrl);
 
-            mediaRecorderRef.current.ondataavailable = async (event) => {
-                if (event.data.size > 0) {
-                    await handleUserAudio(event.data);
+            socketRef.current.onopen = () => {
+                console.log('Frontend: WebSocket connection established.');
+                mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+                mediaRecorderRef.current.ondataavailable = (event) => {
+                    if (event.data.size > 0 && socketRef.current?.readyState === WebSocket.OPEN) {
+                        socketRef.current.send(event.data);
+                    }
+                };
+                mediaRecorderRef.current.start(500);
+            };
+
+            socketRef.current.onmessage = (event) => {
+                if (event.data instanceof Blob) {
+                    audioQueueRef.current.push(event.data);
+                    processAudioQueue();
+                } else {
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.status === 'connected') {
+                            onStateChange('listening');
+                            console.log('Frontend: Voice agent is ready.');
+                        } else if (data.error) {
+                            console.error("Frontend: Error from server:", data.error);
+                            setErrorMessage(data.error);
+                            onStateChange('error');
+                            disconnect();
+                        }
+                    } catch (e) {
+                         console.log("Received non-JSON message:", event.data)
+                    }
                 }
             };
-        } catch (error) {
-            console.error("Connection or Welcome Message failed:", error);
-            setErrorMessage(error instanceof Error ? error.message : "An unknown error occurred.");
-            onStateChange('error');
-        }
-    };
-
-    const handleUserAudio = async (audioBlob: Blob) => {
-        if (!openaiRef.current) return;
-        try {
-            const file = new File([audioBlob], "input.webm", { type: "audio/webm" });
-            const transcription = await openaiRef.current.audio.transcriptions.create({
-                file,
-                model: "whisper-1",
-            });
             
-            if (!transcription.text?.trim()) return;
+             socketRef.current.onclose = () => {
+                console.log('WebSocket disconnected');
+                onStateChange('idle');
+                if (mediaRecorderRef.current?.state === 'recording') {
+                    mediaRecorderRef.current.stop();
+                }
+            };
 
-            const chatCompletion = await openaiRef.current.chat.completions.create({
-                messages: [{ role: "user", content: transcription.text }],
-                model: "gpt-4",
-            });
+            socketRef.current.onerror = (error) => {
+                console.error('Frontend: WebSocket error:', error);
+                setErrorMessage("Connection failed.");
+                onStateChange('error');
+            };
 
-            const gptResponse = chatCompletion.choices[0].message.content;
-            if (gptResponse) {
-                const speechResponse = await openaiRef.current.audio.speech.create({
-                    model: "tts-1",
-                    voice: "nova",
-                    input: gptResponse,
-                });
-                const responseBlob = await speechResponse.blob();
-                audioQueueRef.current.push(responseBlob);
-                processAudioQueue();
-            }
         } catch (error) {
-            console.error("Error processing user audio:", error);
+            console.error('Failed to get microphone access:', error);
+            setErrorMessage("Microphone access denied.");
+            onStateChange('error');
         }
     };
     
     const disconnect = () => {
-        if (mediaRecorderRef.current?.state === 'recording') {
-            mediaRecorderRef.current.stop();
+        if (socketRef.current) {
+            socketRef.current.close();
         }
-        audioQueueRef.current = [];
-        if (audioPlayerRef.current) {
-            audioPlayerRef.current.pause();
-            audioPlayerRef.current.src = "";
-        }
-        setStatus('idle');
-        onStateChange('idle');
     };
 
     useEffect(() => {
-        if (audioQueueRef.current.length === 0 && !isPlayingRef.current && status === 'speaking') {
-             setStatus('listening');
+        if (audioQueueRef.current.length === 0 && !isPlayingRef.current) {
              onStateChange('listening');
         }
-    }, [status, onStateChange]);
+    }, [isPlayingRef.current, onStateChange]);
 
-    return { status, connect, disconnect };
+
+    return { connect, disconnect };
 };
 
 
-// --- UI Components (No changes needed below this line) ---
-
-const useIsMobile = (breakpoint = 768): boolean => {
-    const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < breakpoint);
-
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-        const checkScreenSize = () => setIsMobile(window.innerWidth < breakpoint);
-        window.addEventListener('resize', checkScreenSize);
-        return () => window.removeEventListener('resize', checkScreenSize);
-    }, [breakpoint]);
-
-    return isMobile;
-};
-
+// --- UI Components ---
 interface CardData {
   id: string;
   eyeType: 'default' | 'xx';
@@ -322,7 +291,7 @@ const AICard = ({ id, eyeType, poweredBy, onActivate, isActive, mousePosition, h
   const isMobile = useIsMobile();
   const [agentStatus, setAgentStatus] = useState('idle');
   const [errorMessage, setErrorMessage] = useState("");
-  const { connect, disconnect } = useVoiceAgent({ provider: poweredBy, onStateChange: setAgentStatus, setErrorMessage });
+  const { connect, disconnect } = useVoiceAgent({ onStateChange: setAgentStatus, setErrorMessage });
   const [dots, setDots] = useState('');
 
   const handleToggleConnection = () => {
