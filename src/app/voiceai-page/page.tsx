@@ -1,11 +1,8 @@
-// src/app/voiceai-page/page.tsx
 'use client';
 
 import React, { useState, useEffect, useRef, SVGProps } from 'react';
-// FIX: Removed the unused 'GoogleGenerativeAI' import
 import { FlowProvider, useFlow, useFlowEventListener } from '@speechmatics/flow-client-react';
 
-// --- Hooks and Interfaces (No changes) ---
 const useIsMobile = (breakpoint = 768): boolean => {
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
@@ -21,7 +18,6 @@ interface CardProps extends CardData { mousePosition: { x: number; y: number }; 
 interface IconContainerProps { eyeType: 'default' | 'xx'; mousePosition: { x: number; y: number }; isHovered: boolean; isAnotherCardHovered: boolean; }
 interface EyeProps extends SVGProps<SVGSVGElement> { containerRef: React.RefObject<HTMLDivElement | null>; mousePosition: { x: number; y: number }; }
 
-// --- Visual Components (No changes) ---
 const DefaultEyes = ({ containerRef, mousePosition, ...props }: EyeProps) => {
   const pupil1Ref = useRef<SVGCircleElement>(null);
   const pupil2Ref = useRef<SVGCircleElement>(null);
@@ -241,14 +237,7 @@ const AICard = ({ id, poweredBy, onActivate, isActive, ...props }: CardProps) =>
     }
   };
   
-  useFlowEventListener("open", () => {
-    if (isActiveRef.current && id === 'speechmatics') {
-      console.log("✅ Speechmatics connection opened successfully.");
-      speak("Hey, I'm a voice agent powered by Speechmatics. What do you wanna ask me?");
-    }
-  });
-
-  useFlowEventListener("agentAudio", (audio) => {
+  useFlowEventListener("agentAudio", (audio: { data: Int16Array }) => {
     if (isActiveRef.current && id === 'speechmatics') {
       stopMicrophone();
       audioQueue.push(audio.data);
@@ -256,11 +245,12 @@ const AICard = ({ id, poweredBy, onActivate, isActive, ...props }: CardProps) =>
     }
   });
 
-  useFlowEventListener("error", (error) => {
+  useFlowEventListener("message", (message: { data: { message: string } }) => {
     if (isActiveRef.current && id === 'speechmatics') {
-      console.error("Speechmatics Flow Error:", error);
-      alert(`An SDK error occurred: ${error.data.type}: ${error.data.reason}`);
-      setAgentState('error');
+      if (message.data.message === 'ConversationStarted') {
+        console.log("✅ Speechmatics connection confirmed by server.");
+        speak("Hey, I'm a voice agent powered by Speechmatics. What do you wanna ask me?");
+      }
     }
   });
 
@@ -310,8 +300,6 @@ const AICard = ({ id, poweredBy, onActivate, isActive, ...props }: CardProps) =>
     } else {
       stopSpeechmatics();
     }
-    // FIX: Added a comment to disable the ESLint rule for this line
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive, id]);
 
   const getButtonText = () => {
@@ -322,6 +310,7 @@ const AICard = ({ id, poweredBy, onActivate, isActive, ...props }: CardProps) =>
         case 'speaking': return "Click to Stop (Speaking)";
         case 'listening': return "Click to Stop (Listening)";
         case 'error': return "Error - Click to Reset";
+        case 'idle': return "Click to Stop";
         default: return "Click to Stop";
       }
     }
