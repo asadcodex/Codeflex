@@ -133,7 +133,6 @@ const AICard = ({ id, poweredBy, onActivate, isActive, ...props }: CardProps) =>
   const [agentState, setAgentState] = useState<AgentState>('idle');
 
   const { startConversation, endConversation, sendAudio } = useFlow();
-  
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioProcessorRef = useRef<ScriptProcessorNode | null>(null);
@@ -247,14 +246,12 @@ const AICard = ({ id, poweredBy, onActivate, isActive, ...props }: CardProps) =>
   });
 
   useFlowEventListener("message", (message: { data: { message: string } }) => {
-    if (isActiveRef.current && id === 'speechmatics') {
-      if (message.data.message === 'ConversationStarted') {
-        console.log("✅ Speechmatics connection confirmed by server.");
-        speak("Hey, I'm a voice agent powered by Speechmatics. What do you wanna ask me?");
-      }
+    if (isActiveRef.current && id === 'speechmatics' && message.data.message === 'ConversationStarted') {
+      console.log("✅ Speechmatics connection confirmed by server.");
+      speak("Hey, I'm a voice agent powered by Speechmatics. What do you wanna ask me?");
     }
   });
-
+  
   const startSpeechmatics = async () => {
     setAgentState('connecting');
     try {
