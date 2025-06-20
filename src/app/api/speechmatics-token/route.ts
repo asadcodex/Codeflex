@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 
-// This function will handle POST requests to /api/speechmatics-token
-export async function POST(request: Request) {
+// FIX: 'request' is changed to '_request' to indicate it's unused.
+export async function POST(_request: Request) {
   const apiKey = process.env.SPEECHMATICS_API_KEY;
 
   if (!apiKey) {
