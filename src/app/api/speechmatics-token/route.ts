@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 
-// FIX: 'request' is changed to '_request' to indicate it's unused.
 export async function POST(_request: Request) {
   const apiKey = process.env.SPEECHMATICS_API_KEY;
 

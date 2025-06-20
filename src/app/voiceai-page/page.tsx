@@ -133,6 +133,7 @@ const AICard = ({ id, poweredBy, onActivate, isActive, ...props }: CardProps) =>
   const [agentState, setAgentState] = useState<AgentState>('idle');
 
   const { startConversation, endConversation, sendAudio } = useFlow();
+  
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioProcessorRef = useRef<ScriptProcessorNode | null>(null);
